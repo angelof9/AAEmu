@@ -14,6 +14,7 @@ public class SCChatMessagePacket : GamePacket
     private readonly string _message;
     private readonly int _ability;
     private readonly byte _languageType;
+    private readonly string _fromName;
 
     public SCChatMessagePacket(ChatType type, string message) : base(SCOffsets.SCChatMessagePacket, 1)
     {
@@ -26,6 +27,16 @@ public class SCChatMessagePacket : GamePacket
     {
         _type = type;
         _character = character;
+        _message = message;
+        _ability = ability;
+        _languageType = languageType;
+    }
+
+    public SCChatMessagePacket(ChatType type, string fromName, string message, int ability, byte languageType) :
+        base(SCOffsets.SCChatMessagePacket, 1)
+    {
+        _type = type;
+        _fromName = fromName;
         _message = message;
         _ability = ability;
         _languageType = languageType;
@@ -45,7 +56,13 @@ public class SCChatMessagePacket : GamePacket
         if (_character?.Connection?.GetAttribute("gmFlag") != null)
             stream.Write(_character != null ? "GM " + _character.Name : "");
         else
-            stream.Write(_character != null ? _character.Name : "");
+        if ((_character != null) && (_character?.Connection?.GetAttribute("gmFlag") == null))
+            stream.Write(_character.Name);
+        else
+        if (_fromName != null)
+            stream.Write(_fromName);
+        else
+            stream.Write("");
         stream.Write(_message);
         stream.Write(_character != null ? _ability : 0);
         stream.Write(0); //option

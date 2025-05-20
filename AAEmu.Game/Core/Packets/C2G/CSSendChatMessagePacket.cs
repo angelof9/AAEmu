@@ -40,7 +40,27 @@ public class CSSendChatMessagePacket : GamePacket
                 var target = WorldManager.Instance.GetCharacter(targetName);
                 if ((target == null) || (!target.IsOnline))
                 {
-                    Connection.ActiveChar.SendErrorMessage(ErrorMessageType.WhisperNoTarget);
+                    // Lets try ChatAI
+                    if (ChatAISessionManager.Instance.IsNPCAllowed(targetName))
+                    {
+                        Logger.Debug("Test IsCharacterNearNpc");
+                        if (ChatAISessionManager.Instance.IsCharacterNearNpc(Connection.ActiveChar, targetName))
+                        {
+                            Logger.Debug("Request ChatAISession");
+                            ChatAISessionManager.Instance.ChatAISessionRequest(Connection.ActiveChar, targetName, message);
+                        }
+                        else
+                        {
+                            Logger.Debug("ErrorMessageType.NotNearToTarget");
+                            Connection.ActiveChar.SendErrorMessage(ErrorMessageType.NotNearToTarget);
+                        }
+                    }
+                    else
+                    {
+                        //Logger.Debug("ErrorMessageType.NoInteractionAvailable");
+                        //Connection.ActiveChar.SendErrorMessage(ErrorMessageType.NoInteractionAvailable);
+                        Connection.ActiveChar.SendErrorMessage(ErrorMessageType.WhisperNoTarget);
+                    }
                 }
                 else
                 if (target.Faction.MotherId != Connection.ActiveChar.Faction.MotherId)

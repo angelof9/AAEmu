@@ -180,6 +180,9 @@ public sealed class GameService : IHostedService, IDisposable
         TimedRewardsManager.Instance.Initialize();
 
         DuelManager.Initialize();
+
+        ChatAISessionManager.Instance.Initialize();
+
         SaveManager.Instance.Initialize();
         AreaTriggerManager.Instance.Initialize();
         SpecialtyManager.Initialize();

@@ -4,6 +4,7 @@ using AAEmu.Commons.Utils;
 using AAEmu.Game.IO;
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Expeditions;
+using AAEmu.Game.Models.Game.Chat;
 
 namespace AAEmu.Game.Models;
 
@@ -35,6 +36,7 @@ public partial class AppConfiguration : Singleton<AppConfiguration>
     public string DefaultLanguage { get; set; } = "en_us";
     public bool DebugInfo { get; set; } = true;
     public uint DebugInfoLevel { get; set; } = 100;
+    public ChatAIConfig ChatAI { get; set; }
 
     public class NetworkConfig
     {

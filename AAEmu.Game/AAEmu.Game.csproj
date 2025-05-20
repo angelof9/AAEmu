@@ -48,6 +48,9 @@
     <None Update="Configurations\CharacterSettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Configurations\ChatAI.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -92,6 +95,7 @@
     <PackageReference Include="NCrontab" Version="3.3.3" />
     <PackageReference Include="NLog" Version="5.3.4" />
     <PackageReference Include="NLua" Version="1.7.3" />
+    <PackageReference Include="OpenAI" Version="2.2.0-beta.4" />
     <PackageReference Include="OSVersionExt.NetStd" Version="3.0.1" />
     <PackageReference Include="System.Drawing.Primitives" Version="4.3.0" />
     <PackageReference Include="System.Numerics.Vectors" Version="4.6.0" />
