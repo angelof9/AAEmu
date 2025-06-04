@@ -57,6 +57,7 @@ public class ShipyardManager : Singleton<ShipyardManager>
         var objId = ObjectIdManager.Instance.GetNextId();
         var shipId = ShipyardIdManager.Instance.GetNextId();
         var shipyard = new Shipyard();
+        shipyard.Transform.InstanceId = owner.ParentWorld.Id;
         shipyard.TemplateId = shipyardData.TemplateId; // duplicate Id
         shipyard.Id = shipyardData.TemplateId;
         shipyard.ObjId = objId;
@@ -192,7 +193,7 @@ public class ShipyardManager : Singleton<ShipyardManager>
             // calculate skillData
             var skillData = (SkillItem)SkillCaster.GetByType(SkillCasterType.Item);
             skillData.ItemId = foundItems[0].Id;
-            SlaveManager.Instance.Create(character, skillData, true, shipyard.Transform);
+            shipyard.ParentWorld.SlaveManager.Create(character, skillData, true, shipyard.Transform);
         }
         RemoveShipyard(shipyard);
     }
