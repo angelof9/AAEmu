@@ -323,7 +323,7 @@ public class PortalManager : Singleton<PortalManager>
     /// <param name="portalInfo"></param>
     /// <param name="portalEffectObj"></param>
     /// <returns></returns>
-    private static Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj)
+    private static Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj, uint portalNpcId)
     {
         // 3891 - Portal Entrance
         // 6949 - Portal Exit
