@@ -1226,6 +1226,10 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                         var template = new OpenPortalEffect();
                         template.Id = reader.GetUInt32("id");
                         template.Distance = reader.GetFloat("distance");
+                        template.portalEnterId =
+                            !reader.IsDBNull("enter_portal_npc_id") ? reader.GetUInt32("enter_portal_npc_id") : 3891u;
+                        template.portalExitId =
+                            !reader.IsDBNull("exit_portal_npc_id") ? reader.GetUInt32("exit_portal_npc_id") : 6949u;
                         _effects["OpenPortalEffect"].Add(template.Id, template);
                     }
                 }
