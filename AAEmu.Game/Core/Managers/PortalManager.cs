@@ -325,17 +325,37 @@ public class PortalManager : Singleton<PortalManager>
     /// <returns></returns>
     private static Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj, uint portalNpcId)
     {
-        // 3891 - Portal Entrance
-        // 6949 - Portal Exit
         var portalPointDestination = new Transform(null, null, 
             portalInfo.ZoneId,
             owner.Transform.InstanceId,
             portalInfo.X, portalInfo.Y, portalInfo.Z,
             0f, 0f, portalInfo.ZRot);
 
-        // TODO: Add support for different types of teleport books
+        // Remove region below for client that support new portals
+        #region Custom New portals
         var templateId = isExit ? 6949u : 3891u;
         var template = NpcManager.Instance.GetTemplate(templateId);
+        var portalCustomModelId = template.ModelId;
+        if (owner is Character character)
+        {
+            if (character.GetOption(1664) == "random")
+            {
+                var portalBooks = character.Inventory.Bag.Items
+                    .Where(item => ItemManager.Instance.GetItemTemplateFromItemId(item.TemplateId).ImplId == ItemImplEnum.Portal)
+                    .ToList();
+                var random = new Random();
+                var randomPortalBook = portalBooks[random.Next(portalBooks.Count)];
+                var portalSkillId = ItemManager.Instance.GetTemplate(randomPortalBook.TemplateId).UseSkillId;
+                var openPortalEffectTemplate = (Models.Game.Skills.Effects.OpenPortalEffect)SkillManager.Instance.GetSkillTemplate(portalSkillId).Effects[0].Template;
+                portalCustomModelId = isExit ? NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalExitId).ModelId : NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalEnterId).ModelId;
+                Logger.Debug($"Custom portals (random): {0} ModelId {portalCustomModelId}", isExit ? "Exit" : "Enter");
+            }
+            else
+            {
+                portalCustomModelId = isExit ? uint.Parse(character.GetOption(1666)) : uint.Parse(character.GetOption(1665));
+                Logger.Debug($"Custom portals: {0} ModelId {portalCustomModelId}", isExit ? "Exit" : "Enter");
+            }
+        }
         var portalNpc = new Models.Game.Units.Portal
         {
             ParentWorld = owner.ParentWorld,
@@ -343,12 +363,33 @@ public class PortalManager : Singleton<PortalManager>
             OwnerId = ((Character)owner).Id,
             TemplateId = templateId,
             Template = template,
+            ModelId = portalCustomModelId,
+            Faction = owner.Faction, // INFO - FactionManager.Instance.GetFaction(template.FactionId)
+            Level = template.Level,
+            Name = portalInfo.Name,
+            TeleportPosition = portalPointDestination
+        };
+        #endregion
+
+        // Uncomment below region for client that supports new portals
+        #region New portals
+        /*
+        var template = NpcManager.Instance.GetTemplate(portalNpcId);          // Uncomment for client that support new portals
+        var portalNpc = new Models.Game.Units.Portal
+        {
+            ParentWorld = owner.ParentWorld,
+            ObjId = ObjectIdManager.Instance.GetNextId(),
+            OwnerId = ((Character)owner).Id,
+            TemplateId = portalNpcId,
+            Template = template,
             ModelId = template.ModelId,
             Faction = owner.Faction, // INFO - FactionManager.Instance.GetFaction(template.FactionId)
             Level = template.Level,
             Name = portalInfo.Name,
             TeleportPosition = portalPointDestination
         };
+        */
+        #endregion
 
         if (isExit)
         {
@@ -375,13 +416,13 @@ public class PortalManager : Singleton<PortalManager>
         return portalNpc;
     }
 
-    public void OpenPortal(Character owner, SkillObjectUnk1 portalEffectObj)
+    public void OpenPortal(Character owner, SkillObjectUnk1 portalEffectObj, uint portalEnterId, uint portalExitId)
     {
         var portalInfo = owner.Portals.GetPortalInfo((uint)portalEffectObj.Id);
         if (!CheckCanOpenPortal(owner, portalInfo.ZoneId)) return;
 
-        var entrance = MakePortal(owner, false, portalInfo, portalEffectObj);   // Entrance (green)
-        var exit = MakePortal(owner, true, portalInfo, portalEffectObj);    // Exit (yellow)
+        var entrance = MakePortal(owner, false, portalInfo, portalEffectObj, portalEnterId);   // Entrance (green)
+        var exit = MakePortal(owner, true, portalInfo, portalEffectObj, portalExitId);    // Exit (yellow)
         // Linked the 2 portals
         entrance.LinkedPortal = exit;
         exit.LinkedPortal = entrance;
