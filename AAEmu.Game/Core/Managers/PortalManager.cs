@@ -325,7 +325,7 @@ public class PortalManager : Singleton<PortalManager>
     /// <returns></returns>
     private static Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj, uint portalNpcId)
     {
-        var portalPointDestination = new Transform(null, null, 
+        var portalPointDestination = new Transform(null, null,
             portalInfo.ZoneId,
             owner.Transform.InstanceId,
             portalInfo.X, portalInfo.Y, portalInfo.Z,
@@ -408,7 +408,7 @@ public class PortalManager : Singleton<PortalManager>
 
         portalNpc.Hp = portalNpc.MaxHp;
         portalNpc.Mp = portalNpc.MaxMp;
-        
+
         portalNpc.Spawn();
 
         var killTask = new KillPortalTask(portalNpc);
@@ -485,7 +485,8 @@ public class PortalManager : Singleton<PortalManager>
     {
         var currentPosition = character.Transform.World.Position;
         var distance = 999999f;
-        var portal = new Portal {
+        var portal = new Portal
+        {
             // Fail-safe coordinates
             X = currentPosition.X,
             Y = currentPosition.Y,
