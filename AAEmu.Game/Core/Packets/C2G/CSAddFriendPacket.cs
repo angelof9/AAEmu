@@ -38,7 +38,7 @@ public class CSAddFriendPacket : GamePacket
                     Connection.ActiveChar.SetOption(1664, result);
                     var customPortalBookTemplateId = uint.Parse(result);
                     var portalSkillId = ItemManager.Instance.GetTemplate(customPortalBookTemplateId).UseSkillId;
-                    var openPortalEffectTemplate = (OpenPortalEffect)SkillManager.Instance.GetSkillTemplate(portalSkillId).Effects[0].Template;
+                    var openPortalEffectTemplate = (OpenPortalEffect)(SkillManager.Instance.GetSkillTemplate(portalSkillId).Effects[0].Template);
                     // Store enter portal modelId
                     var enterModelId = NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalEnterId).ModelId.ToString();
                     Connection.ActiveChar.SetOption(1665, enterModelId);
