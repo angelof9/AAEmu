@@ -1,8 +1,4 @@
-﻿using System;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
-
+﻿using System.Diagnostics;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Commons.Utils.Updater;
 using AAEmu.Game.Core.Managers;
@@ -193,6 +189,8 @@ public sealed class GameService : IHostedService, IDisposable
 
         // Start main_world and other static instance
         WorldManager.Instance.CreateStaticInstances();
+
+        WorldManager.Instance.Initialize();
 
         CharacterManager.CheckForDeletedCharacters();
         CharacterManager.Instance.StartOnlineTracking();

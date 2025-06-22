@@ -1,7 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Units;
@@ -26,7 +23,7 @@ public class DoodadFuncFinal : DoodadPhaseFuncTemplate
         else
             Logger.Trace("DoodadFuncFinal: After {0}, Respawn {1}, MinTime {2}, MaxTime {3}, ShowTip {4}, ShowEndTime {5}, Tip {6}", After, Respawn, MinTime, MaxTime, ShowTip, ShowEndTime, Tip);
 
-        var delay = Rand.Next(MinTime, MaxTime);
+        var delay = Random.Shared.Next(MinTime, MaxTime);
 
         if (After > 0)
         {

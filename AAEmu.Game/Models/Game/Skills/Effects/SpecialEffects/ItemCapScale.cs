@@ -1,7 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Chat;
@@ -61,8 +58,8 @@ public class ItemCapScale : SpecialEffectAction
 
         var itemCapScale = ItemManager.Instance.GetItemCapScale(skill.Id);
 
-        var physicalScale = (ushort)Rand.Next(itemCapScale.ScaleMin, itemCapScale.ScaleMax);
-        var magicalScale = (ushort)Rand.Next(itemCapScale.ScaleMin, itemCapScale.ScaleMax);
+        var physicalScale = (ushort)Random.Shared.Next(itemCapScale.ScaleMin, itemCapScale.ScaleMax);
+        var magicalScale = (ushort)Random.Shared.Next(itemCapScale.ScaleMin, itemCapScale.ScaleMax);
 
         equipItem.TemperPhysical = physicalScale;
         equipItem.TemperMagical = magicalScale;

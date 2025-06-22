@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-
+﻿using System.Data;
 using AAEmu.Commons.Utils;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Core.Managers.Id;
@@ -10,7 +6,6 @@ using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.GameData;
-using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Auction.Templates;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Formulas;
@@ -157,7 +152,7 @@ public class ItemManager : Singleton<ItemManager>
             {
                 dropRateMax += lootPacks.Loots[ui].DropRate;
             }
-            var dropRateItem = Rand.Next(0, dropRateMax);
+            var dropRateItem = Random.Shared.Next(0, dropRateMax);
             var dropRateItemId = 0u;
             for (var uii = 0; uii < (lootPacks.Loots?.Count ?? 0); uii++)
             {
@@ -169,7 +164,7 @@ public class ItemManager : Singleton<ItemManager>
                         CreateTime = DateTime.UtcNow,
                         Id = Instance.GetNewId(),
                         MadeUnitId = templateId,
-                        Count = Rand.Next(lootPacks.Loots[uii].MinAmount, lootPacks.Loots[uii].MaxAmount)
+                        Count = Random.Shared.Next(lootPacks.Loots[uii].MinAmount, lootPacks.Loots[uii].MaxAmount)
                     };
                     items.Add(item);
                     break;

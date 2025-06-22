@@ -1,26 +1,23 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text;
 
 using AAEmu.Commons.Exceptions;
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Network.Core;
 using AAEmu.Login.Core.Network.Connections;
-
+using AAEmu.Login.Models;
 using NLog;
 
 namespace AAEmu.Login.Core.Network.Login;
 
-public class LoginProtocolHandler : BaseProtocolHandler
+public class LoginProtocolHandler(
+    IEnumerable<ILoginPacketDescriptor> packetDescriptors,
+    ILoginConnectionTable loginConnectionTable) : BaseProtocolHandler, ILoginProtocolHandler
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    private ConcurrentDictionary<uint, Type> _packets;
-
-    public LoginProtocolHandler()
-    {
-        _packets = new ConcurrentDictionary<uint, Type>();
-    }
+    private readonly ConcurrentDictionary<ushort, ILoginPacketDescriptor> _packets =
+        new(packetDescriptors.ToDictionary(d => d.TypeId));
 
     public override void OnConnect(ISession session)
     {
@@ -29,7 +26,7 @@ public class LoginProtocolHandler : BaseProtocolHandler
         {
             var con = new LoginConnection(session);
             LoginConnection.OnConnect();
-            LoginConnectionTable.Instance.AddConnection(con);
+            loginConnectionTable.AddConnection(con);
         }
         catch (Exception e)
         {
@@ -45,11 +42,12 @@ public class LoginProtocolHandler : BaseProtocolHandler
             Logger.Error("Unexpected null Session");
             return;
         }
+
         try
         {
-            var con = LoginConnectionTable.Instance.GetConnection(session.SessionId);
+            var con = loginConnectionTable.GetConnection(new ConnectionId(session.SessionId));
             if (con != null)
-                LoginConnectionTable.Instance.RemoveConnection(session.SessionId);
+                loginConnectionTable.RemoveConnection(new ConnectionId(session.SessionId));
         }
         catch (Exception e)
         {
@@ -64,7 +62,7 @@ public class LoginProtocolHandler : BaseProtocolHandler
     {
         try
         {
-            var connection = LoginConnectionTable.Instance.GetConnection(session.SessionId);
+            var connection = loginConnectionTable.GetConnection(new ConnectionId(session.SessionId));
             if (connection == null)
                 return;
             OnReceive(connection, buf, offset, bytes);
@@ -88,7 +86,7 @@ public class LoginProtocolHandler : BaseProtocolHandler
             }
 
             stream.Insert(stream.Count, buf, 0, bytes);
-            while (stream != null && stream.Count > 0)
+            while (stream is { Count: > 0 })
             {
                 ushort len;
                 try
@@ -121,16 +119,20 @@ public class LoginProtocolHandler : BaseProtocolHandler
 
                     stream2.ReadUInt16(); //len
                     var type = stream2.ReadUInt16();
-                    _packets.TryGetValue(type, out var classType);
-                    if (classType == null)
+                    if (!_packets.TryGetValue(type, out var packetDescriptor))
                     {
                         HandleUnknownPacket(connection, type, stream2);
                     }
                     else
                     {
-                        var packet = (LoginPacket)Activator.CreateInstance(classType);
-                        packet.Connection = connection;
-                        packet.Decode(stream2);
+                        try
+                        {
+                            packetDescriptor.Dispatch(stream2, connection);
+                        }
+                        catch (Exception e)
+                        {
+                            Logger.Error(e, "Error on packet dispatch {0}", type);
+                        }
                     }
                 }
                 else
@@ -143,24 +145,16 @@ public class LoginProtocolHandler : BaseProtocolHandler
         }
         catch (Exception e)
         {
-            connection?.Shutdown();
+            connection.Shutdown();
             Logger.Error(e);
         }
-    }
-
-    public void RegisterPacket(uint type, Type classType)
-    {
-        if (_packets.ContainsKey(type))
-            _packets.TryRemove(type, out _);
-
-        _packets.TryAdd(type, classType);
     }
 
     private static void HandleUnknownPacket(LoginConnection connection, uint type, PacketStream stream)
     {
         var dump = new StringBuilder();
         for (var i = stream.Pos; i < stream.Count; i++)
-            dump.AppendFormat("{0:x2} ", stream.Buffer[i]);
+            dump.Append($"{stream.Buffer[i]:x2} ");
         Logger.Error("Unknown packet 0x{0:x2} from {1}:\n{2}", (object)type, (object)connection.Ip, (object)dump);
     }
 }

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using AAEmu.Commons.Exceptions;
@@ -7,20 +6,21 @@ using AAEmu.Commons.Network;
 using AAEmu.Commons.Network.Core;
 using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Connections;
+using AAEmu.Login.Models;
 using NLog;
 
 namespace AAEmu.Login.Core.Network.Internal;
 
-public class InternalProtocolHandler : BaseProtocolHandler
+public class InternalProtocolHandler(
+    IEnumerable<IInternalPacketDescriptor> packetDescriptors,
+    IGameController gameController,
+    IInternalConnectionTable internalConnectionTable)
+    : BaseProtocolHandler, IInternalProtocolHandler
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    private ConcurrentDictionary<uint, Type> _packets;
-
-    public InternalProtocolHandler()
-    {
-        _packets = new ConcurrentDictionary<uint, Type>();
-    }
+    private readonly ConcurrentDictionary<ushort, IInternalPacketDescriptor> _packets =
+        new(packetDescriptors.ToDictionary(d => d.TypeId));
 
     public override void OnConnect(ISession session)
     {
@@ -28,21 +28,26 @@ public class InternalProtocolHandler : BaseProtocolHandler
             session.SessionId.ToString(CultureInfo.InvariantCulture));
         var con = new InternalConnection(session);
         InternalConnection.OnConnect();
-        InternalConnectionTable.Instance.AddConnection(con);
+        internalConnectionTable.AddConnection(con);
     }
 
     public override void OnDisconnect(ISession session)
     {
         Logger.Info("GameServer from {0} disconnected", session.Ip.ToString());
-        var gsId = session.GetAttribute("gsId");
-        if (gsId != null)
-            GameController.Instance.Remove((byte)gsId);
-        InternalConnectionTable.Instance.RemoveConnection(session.SessionId);
+        if (session.GetAttribute("gsId") is { } gsId)
+            gameController.Remove((GameServerId)gsId);
+        internalConnectionTable.RemoveConnection(session.SessionId);
     }
 
     public override void OnReceive(ISession session, byte[] buf, int offset, int bytes)
     {
-        var connection = InternalConnectionTable.Instance.GetConnection(session.SessionId);
+        var connection = internalConnectionTable.GetConnection(session.SessionId);
+        if (connection == null)
+        {
+            Logger.Error("Connection not found for session {0}", session.SessionId);
+            return;
+        }
+
         var stream = new PacketStream();
         if (connection.LastPacket != null)
         {
@@ -51,7 +56,7 @@ public class InternalProtocolHandler : BaseProtocolHandler
         }
 
         stream.Insert(stream.Count, buf, offset, bytes);
-        while (stream != null && stream.Count > 0)
+        while (stream is { Count: > 0 })
         {
             ushort len;
             try
@@ -84,8 +89,7 @@ public class InternalProtocolHandler : BaseProtocolHandler
 
                 stream2.ReadUInt16();
                 var type = stream2.ReadUInt16();
-                _packets.TryGetValue(type, out var classType);
-                if (classType == null)
+                if (!_packets.TryGetValue(type, out var packetDescriptor))
                 {
                     HandleUnknownPacket(session, type, stream2);
                 }
@@ -93,14 +97,11 @@ public class InternalProtocolHandler : BaseProtocolHandler
                 {
                     try
                     {
-                        var packet = (InternalPacket)Activator.CreateInstance(classType);
-                        packet.Connection = connection;
-                        packet.Decode(stream2);
+                        packetDescriptor.Dispatch(stream2, connection);
                     }
                     catch (Exception e)
                     {
-                        Logger.Error("Error on decode packet {0}", type);
-                        Logger.Error(e);
+                        Logger.Error(e, "Error on packet dispatch {0}", type);
                     }
                 }
             }
@@ -113,19 +114,11 @@ public class InternalProtocolHandler : BaseProtocolHandler
         }
     }
 
-    public void RegisterPacket(uint type, Type classType)
-    {
-        if (_packets.ContainsKey(type))
-            _packets.TryRemove(type, out _);
-
-        _packets.TryAdd(type, classType);
-    }
-
     private static void HandleUnknownPacket(ISession session, uint type, PacketStream stream)
     {
         var dump = new StringBuilder();
         for (var i = stream.Pos; i < stream.Count; i++)
-            dump.AppendFormat("{0:x2} ", stream.Buffer[i]);
+            dump.Append($"{stream.Buffer[i]:x2} ");
         Logger.Error("Unknown packet 0x{0:x2} from {1}:\n{2}", type, session.Ip, dump);
     }
 }

@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Network.Connections;
 using AAEmu.Game.Core.Network.Login;
 using AAEmu.Game.Core.Packets.G2C;
@@ -176,7 +171,7 @@ public class EnterWorldManager : Singleton<EnterWorldManager>
 
             // Despawn and unmount everybody from owned Mates
             activeChar.ParentWorld.MateManager.RemoveAndDespawnAllActiveOwnedMates(activeChar);
-            connection.ActiveChar.ParentWorld.SlaveManager.RemoveAndDespawnAllActiveOwnedSlaves(activeChar);
+            activeChar.ParentWorld.SlaveManager.RemoveAndDespawnAllActiveOwnedSlaves(activeChar);
 
             // Check if still mounted on somebody else's mount and dismount that if needed
             activeChar.ForceDismount(/*AttachUnitReason.PrefabChanged*/); // Dismounting a mount because of unsummoning sends "10" for this

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 
 using AAEmu.Game.Core.Managers;
@@ -1001,7 +998,7 @@ public partial class Npc : Unit
         CharacterTagging.ClearAllTaggers();
         CurrentAggroTarget = null;
 
-        Spawner?.DecreaseCount(this);
+        Spawner?.DoDespawn(this);
         Ai?.GoToDead();
     }
 
@@ -1438,7 +1435,7 @@ public partial class Npc : Unit
 
     public void DoDespawn(Npc npc)
     {
-        Spawner.DoDespawn([npc]);
+        Spawner.DoDespawn(npc);
     }
 
     /// <summary>

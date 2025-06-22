@@ -1,6 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
@@ -96,9 +94,9 @@ public class HealEffect : EffectTemplate
             }
         }
 
-        bool criticalHeal = Rand.Next(0f, 100f) < ((Unit)caster).HealCritical;
+        bool criticalHeal = Random.Shared.Next(0f, 100f) < ((Unit)caster).HealCritical;
 
-        var value = (int)Rand.Next(min, max);
+        var value = (int)Random.Shared.Next(min, max);
 
         if (criticalHeal)
         {
@@ -110,7 +108,7 @@ public class HealEffect : EffectTemplate
 
         if (UseFixedHeal)
         {
-            value = Rand.Next(FixedMin, FixedMax);
+            value = Random.Shared.Next(FixedMin, FixedMax);
             if (source.Buff != null && source.IsTrigger)
             {
                 value = (int)(value / 1000.0f * source.Amount);

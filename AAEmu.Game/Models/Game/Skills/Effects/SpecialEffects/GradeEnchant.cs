@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
@@ -164,10 +160,10 @@ public class GradeEnchant : SpecialEffectAction
     private static GradeEnchantResult RollRegrade(GradeTemplate gradeTemplate, Item item, bool isLucky, bool useCharm,
         ItemGradeEnchantingSupport charmInfo)
     {
-        var successRoll = Rand.Next(0, 10000);
-        var breakRoll = Rand.Next(0, 10000);
-        var downgradeRoll = Rand.Next(0, 10000);
-        var greatSuccessRoll = Rand.Next(0, 10000);
+        var successRoll = Random.Shared.Next(0, 10000);
+        var breakRoll = Random.Shared.Next(0, 10000);
+        var downgradeRoll = Random.Shared.Next(0, 10000);
+        var greatSuccessRoll = Random.Shared.Next(0, 10000);
 
         // TODO : Refactor
         var successChance = useCharm
@@ -206,7 +202,7 @@ public class GradeEnchant : SpecialEffectAction
 
         if (downgradeRoll < downgradeChance)
         {
-            var newGrade = (byte)Rand.Next(gradeTemplate.EnchantDowngradeMin, gradeTemplate.EnchantDowngradeMax);
+            var newGrade = (byte)Random.Shared.Next(gradeTemplate.EnchantDowngradeMin, gradeTemplate.EnchantDowngradeMax);
             if (newGrade < 0)
             {
                 return GradeEnchantResult.Fail;

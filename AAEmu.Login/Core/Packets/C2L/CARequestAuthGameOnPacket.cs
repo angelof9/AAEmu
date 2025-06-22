@@ -3,12 +3,10 @@ using AAEmu.Login.Core.Network.Login;
 
 namespace AAEmu.Login.Core.Packets.C2L;
 
-public class CARequestAuthGameOnPacket : LoginPacket
+public class CARequestAuthGameOnPacket() : LoginPacket(TypeId), ILoginPacket
 {
-    public CARequestAuthGameOnPacket() : base(CLOffsets.CARequestAuthGameOnPacket)
-    {
-    }
-
+    public new static ushort TypeId => CLOffsets.CARequestAuthGameOnPacket;
+    
     public override void Read(PacketStream stream)
     {
         var pFrom = stream.ReadUInt32();

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers.World;
@@ -30,7 +27,7 @@ public class PublicFarmManager : Singleton<PublicFarmManager>
 
     private void PublicFarmTickStart()
     {
-        Logger.Warn("PublicFarmTickTask: Started");
+        Logger.Info("PublicFarmTickTask: Started");
 
         var lpTickStartTask = new PublicFarmTickStartTask();
         TaskManager.Instance.Schedule(lpTickStartTask, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));

@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using AAEmu.Game.Core.Managers.Id;
+﻿using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.GameData;
@@ -35,7 +31,7 @@ public class TransferManager
         if (_initialized)
             return;
 
-        Logger.Warn("TransferTickTask: Started");
+        Logger.Info("TransferTickTask: Started");
 
         //TransferTickTask = new TransferTickStartTask();
         //TaskManager.Instance.Schedule(TransferTickTask, TimeSpan.FromMinutes(DelayInit), TimeSpan.FromMilliseconds(Delay));

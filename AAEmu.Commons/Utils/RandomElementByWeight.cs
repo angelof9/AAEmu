@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace AAEmu.Commons.Utils;
+﻿namespace AAEmu.Commons.Utils;
 
 public static class IEnumerableExtensions
 {
@@ -10,7 +6,7 @@ public static class IEnumerableExtensions
     {
         float totalWeight = sequence.Sum(weightSelector);
         // The weight we are after...
-        float itemWeightIndex = Rand.NextSingle() * totalWeight;
+        float itemWeightIndex = Random.Shared.NextSingle() * totalWeight;
         float currentWeightIndex = 0.0f;
 
         foreach (var item in from weightedItem in sequence

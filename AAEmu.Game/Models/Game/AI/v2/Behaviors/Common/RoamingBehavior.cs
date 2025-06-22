@@ -1,7 +1,4 @@
-﻿using System;
-using System.Numerics;
-
-using AAEmu.Commons.Utils;
+﻿using System.Numerics;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.AI.Utils;
 using AAEmu.Game.Models.Game.Models;
@@ -53,7 +50,7 @@ public class RoamingBehavior : BaseCombatBehavior
         {
             Ai.Owner.StopMovement();
             _targetRoamPosition = Vector3.Zero;
-            _nextRoaming = DateTime.UtcNow.AddSeconds(Rand.Next(3, 6)); // Rand 3-6 would look nice ?
+            _nextRoaming = DateTime.UtcNow.AddSeconds(Random.Shared.Next(3, 6)); // Rand 3-6 would look nice ?
             Ai.Owner.BroadcastPacket(new SCUnitModelPostureChangedPacket(Ai.Owner, Ai.Owner.AnimActionId, true), false);
         }
     }

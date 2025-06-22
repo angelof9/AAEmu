@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers.World;
+﻿using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Faction;
 using AAEmu.Game.Models.Game.Skills.Plots.Type;
 using AAEmu.Game.Models.Game.Skills.Plots.UpdateTargetMethods;
@@ -147,7 +142,7 @@ public class PlotTargetInfo
         if (args.HitOnce)
             filteredUnits = filteredUnits.Where(unit => unit.ObjId != PreviousTarget.ObjId);
 
-        var index = Rand.Next(0, filteredUnits.Count());
+        var index = Random.Shared.Next(0, filteredUnits.Count());
 
         if (!filteredUnits.Any())
             return null;
@@ -175,7 +170,7 @@ public class PlotTargetInfo
         posUnit.Transform = PreviousTarget.Transform.CloneDetached(posUnit);
         posUnit.Transform.ZoneId = PreviousTarget.Transform.ZoneId;
         posUnit.Transform.InstanceId = PreviousTarget.Transform.InstanceId;
-        posUnit.Transform.Local.SetZRotation(((float)Rand.Next(-180, 180)).DegToRad());
+        posUnit.Transform.Local.SetZRotation(((float)Random.Shared.Next(-180, 180)).DegToRad());
         posUnit.Transform.Local.AddDistanceToFront(args.Distance / 1000f);
         posUnit.Transform.Local.SetHeight(Math.Max(PreviousTarget.Transform.World.Position.Z + (args.HeightOffset / 1000f), WorldManager.Instance.GetHeight(posUnit.Transform)));
         //posUnit.Transform.Local.SetHeight(WorldManager.Instance.GetHeight(posUnit.Transform));

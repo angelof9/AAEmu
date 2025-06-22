@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-using AAEmu.Commons.Exceptions;
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Exceptions;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Faction;
@@ -148,7 +146,7 @@ public class PlotCondition
         // That event sets a variable to 11 and trigger FinishChanneling if true
         // Nowhere in the skill does it seem to check for this value (only for 0 or 1)
 
-        var roll = Rand.Next(0, 100);
+        var roll = Random.Shared.Next(0, 100);
         casterUnit.ConditionChance = roll <= chance;
         return roll <= chance;
     }

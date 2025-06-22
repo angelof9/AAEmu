@@ -1,11 +1,11 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using System.Reflection;
 using AAEmu.Commons.IO;
 using AAEmu.Commons.Utils.DB;
+using AAEmu.Login.Core.Controllers;
+using AAEmu.Login.Core.Network.Connections;
+using AAEmu.Login.Core.Network.Internal;
+using AAEmu.Login.Core.Network.Login;
+using AAEmu.Login.Core.PacketHandlers;
 using AAEmu.Login.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,9 +19,9 @@ namespace AAEmu.Login;
 public static class Program
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
-    private static Thread _thread = Thread.CurrentThread;
+    private static readonly Thread _thread = Thread.CurrentThread;
     private static DateTime _startTime;
-    private static string Name => Assembly.GetExecutingAssembly().GetName().Name;
+    private static string Name => Assembly.GetExecutingAssembly().GetName().Name ?? "AAEmu.Login";
     private static string Version => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "???";
 
     public static int UpTime => (int)(DateTime.UtcNow - _startTime).TotalSeconds;
@@ -49,23 +49,29 @@ public static class Program
             return;
         }
 
-        var builder = new HostBuilder()
-            .ConfigureAppConfiguration((hostingContext, config) =>
-            {
-                config.AddEnvironmentVariables();
+        var builder = Host.CreateApplicationBuilder(args);
+        builder.Configuration.AddEnvironmentVariables();
 
-                if (args != null)
-                {
-                    config.AddCommandLine(args);
-                }
-            })
-            .ConfigureServices((hostContext, services) =>
-            {
-                services.AddOptions();
-                services.AddSingleton<IHostedService, LoginService>();
-            });
+        // Configure services
+        builder.Services.AddOptions();
+        builder.Services.AddHostedService<LoginService>();
+        
+        builder.Services.AddSingleton<IGameController, GameController>();
+        builder.Services.AddSingleton<ILoginController, LoginController>();
+        builder.Services.AddSingleton<IRequestController, RequestController>();
 
-        await builder.RunConsoleAsync();
+        builder.Services.AddSingleton<IInternalProtocolHandler, InternalProtocolHandler>();
+        builder.Services.AddSingleton<IInternalConnectionTable, InternalConnectionTable>();
+        builder.Services.AddSingleton<IInternalNetwork, InternalNetwork>();
+        builder.Services.AddSingleton<ILoginProtocolHandler, LoginProtocolHandler>();
+        builder.Services.AddSingleton<ILoginConnectionTable, LoginConnectionTable>();
+        builder.Services.AddSingleton<ILoginNetwork, LoginNetwork>();
+
+        builder.Services.AddInternalPacketHandlers();
+        builder.Services.AddLoginPacketHandlers();
+        
+        var app = builder.Build();
+        await app.RunAsync();
     }
 
     private static bool LoadConfiguration(string[] args)
@@ -119,7 +125,7 @@ public static class Program
         }
     }
 
-    private static void Configuration(string[] args, string mainConfigJson)
+    private static void Configuration(string[] args, string? mainConfigJson)
     {
         var configJsonFile = Path.Combine(FileManager.AppPath, "Config.json");
         var configurationBuilder = new ConfigurationBuilder();
@@ -147,7 +153,7 @@ public static class Program
             .AddUserSecrets<LoginService>()
             .Build();
 
-        bool userSecretsDefined = config.AsEnumerable().Any();
+        var userSecretsDefined = config.AsEnumerable().Any();
         return userSecretsDefined;
     }
 }

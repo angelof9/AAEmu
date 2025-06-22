@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
@@ -123,19 +120,19 @@ public class DamageEffect : EffectTemplate
         switch (DamageType)
         {
             case DamageType.Melee:
-                if (Rand.Next(0f, 100f) < ((Unit)caster).MeleeCritical - flexibilityRateMod)
+                if (Random.Shared.Next(0f, 100f) < ((Unit)caster).MeleeCritical - flexibilityRateMod)
                     hitType = SkillHitType.MeleeCritical;
                 else
                     hitType = SkillHitType.MeleeHit;
                 break;
             case DamageType.Magic:
-                if (Rand.Next(0f, 100f) < ((Unit)caster).SpellCritical - flexibilityRateMod)
+                if (Random.Shared.Next(0f, 100f) < ((Unit)caster).SpellCritical - flexibilityRateMod)
                     hitType = SkillHitType.SpellCritical;
                 else
                     hitType = SkillHitType.SpellHit;
                 break;
             case DamageType.Ranged:
-                if (Rand.Next(0f, 100f) < ((Unit)caster).RangedCritical - flexibilityRateMod)
+                if (Random.Shared.Next(0f, 100f) < ((Unit)caster).RangedCritical - flexibilityRateMod)
                     hitType = SkillHitType.RangedCritical;
                 else
                     hitType = SkillHitType.RangedHit;
@@ -281,7 +278,7 @@ public class DamageEffect : EffectTemplate
             max = FixedMax;
         }
 
-        var finalDamage = Rand.Next(min, max);
+        var finalDamage = Random.Shared.Next(min, max);
 
         // Buff tag increase (Hellspear's impale combo, for ex)
         if (TargetBuffTagId > 0 && target.Buffs.CheckBuffTag(TargetBuffTagId))

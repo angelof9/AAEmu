@@ -3,14 +3,14 @@ using AAEmu.Login.Core.Network.Login;
 
 namespace AAEmu.Login.Core.Packets.C2L;
 
-public class CACancelEnterWorldPacket : LoginPacket
+public class CACancelEnterWorldPacket() : LoginPacket(TypeId), ILoginPacket
 {
-    public CACancelEnterWorldPacket() : base(CLOffsets.CACancelEnterWorldPacket)
-    {
-    }
+    public new static ushort TypeId => CLOffsets.CACancelEnterWorldPacket;
 
+    public byte WorldId { get; private set; }
+    
     public override void Read(PacketStream stream)
     {
-        var wId = stream.ReadByte(); // diw -> world id
+        WorldId = stream.ReadByte(); // diw -> world id
     }
 }

@@ -1,7 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Tasks.Skills;
@@ -28,7 +25,7 @@ public class SkillUse : SpecialEffectAction
         // TODO ...
         if (caster is Character) { Logger.Debug("Special effects: SkillUse skillId {0}, delay {1}, value3 {2}, value4 {3}", skillId, delay, chance, value4); }
 
-        if (Rand.Next(0, 100) > chance && chance != 0)
+        if (Random.Shared.Next(0, 100) > chance && chance != 0)
         {
             ((Unit)caster).ConditionChance = false;
             return;

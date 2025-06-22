@@ -1,5 +1,5 @@
-﻿using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
+using AAEmu.Commons.Utils;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Items;
@@ -32,11 +32,11 @@ public class DoodadFuncLootItem : DoodadFuncTemplate
         if (character == null)
             return;
 
-        var chance = Rand.Next(0, 10000);
+        var chance = Random.Shared.Next(0, 10000);
         if (chance > Percent)
             return;
 
-        var count = Rand.Next(CountMin, CountMax);
+        var count = Random.Shared.Next(CountMin, CountMax);
 
         if (ItemId == 500)
         {

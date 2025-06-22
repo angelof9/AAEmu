@@ -1,6 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
@@ -66,7 +64,7 @@ public class AggroEffect : EffectTemplate
             max += FixedMax;
         }
 
-        var value = (int)Rand.Next(min, max);
+        var value = (int)Random.Shared.Next(min, max);
         npc.SendPacketToPlayers([caster, npc], new SCAiAggroPacket(npc.ObjId, 1, caster.ObjId, value, 0, 0));
         npc.AddUnitAggro(AggroKind.Damage, character, value);
     }

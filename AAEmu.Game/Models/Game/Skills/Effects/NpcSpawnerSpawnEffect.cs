@@ -1,7 +1,4 @@
-﻿using System;
-using System.Linq;
-
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.NPChar;
@@ -36,7 +33,6 @@ public class NpcSpawnerSpawnEffect : EffectTemplate
             {
                 // spawn in the same world as for caster
                 spawner.Position.WorldId = caster.Transform.WorldId;
-                spawner.ClearLastSpawnCount();
                 var npc = spawner.ForceSpawn(0);
                 if (npc == null)
                     continue;

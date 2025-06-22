@@ -1,6 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Skills.Templates;
@@ -46,7 +44,7 @@ public class ManaBurnEffect : EffectTemplate
             max = (float)(max * (source.Buff.Tick / source.Buff.Duration));
         }
 
-        var finalDamage = Rand.Next(min, max);
+        var finalDamage = Random.Shared.Next(min, max);
 
         if (target is Unit targetUnit)
         {

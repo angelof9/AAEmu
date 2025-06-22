@@ -1,7 +1,4 @@
-﻿using System;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Packets;
+﻿using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Faction;
 using AAEmu.Game.Models.Game.NPChar;
@@ -32,7 +29,7 @@ public class BuffEffect : EffectTemplate
                 return;
             }
         }
-        if (Rand.Next(0, 101) > Chance)
+        if (Random.Shared.Next(0, 101) > Chance)
         {
             ((Unit)caster).ConditionChance = false;
             return;

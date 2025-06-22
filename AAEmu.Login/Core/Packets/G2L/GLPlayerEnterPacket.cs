@@ -1,23 +1,21 @@
 ﻿using AAEmu.Commons.Network;
-using AAEmu.Login.Core.Controllers;
-using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Network.Internal;
+using AAEmu.Login.Models;
 
 namespace AAEmu.Login.Core.Packets.G2L;
 
-public class GLPlayerEnterPacket : InternalPacket
+public class GLPlayerEnterPacket() : InternalPacket(TypeId), IInternalPacket
 {
-    public GLPlayerEnterPacket() : base(GLOffsets.GLPlayerEnterPacket)
-    {
-    }
+    public new static ushort TypeId => GLOffsets.GLPlayerEnterPacket;
+    
+    public ConnectionId ConnectionId { get; private set; }
+    public GameServerId GsId { get; private set; }
+    public byte Result { get; private set; }
 
     public override void Read(PacketStream stream)
     {
-        var connectionId = stream.ReadUInt32();
-        var gsId = stream.ReadByte();
-        var result = stream.ReadByte();
-
-        var connection = LoginConnectionTable.Instance.GetConnection(connectionId);
-        GameController.Instance.EnterWorld(connection, gsId, result);
+        ConnectionId = new ConnectionId(stream.ReadUInt32());
+        GsId = new GameServerId(stream.ReadByte());
+        Result = stream.ReadByte();
     }
 }

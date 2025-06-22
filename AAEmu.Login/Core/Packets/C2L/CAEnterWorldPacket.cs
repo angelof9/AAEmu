@@ -1,20 +1,19 @@
 ﻿using AAEmu.Commons.Network;
-using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Login;
+using AAEmu.Login.Models;
 
 namespace AAEmu.Login.Core.Packets.C2L;
 
-public class CAEnterWorldPacket : LoginPacket
+public class CAEnterWorldPacket() : LoginPacket(TypeId), ILoginPacket
 {
-    public CAEnterWorldPacket() : base(CLOffsets.CAEnterWorldPacket)
-    {
-    }
+    public new static ushort TypeId => CLOffsets.CAEnterWorldPacket;
+    
+    public ulong Flag { get; private set; }
+    public GameServerId GsId { get; private set; }
 
     public override void Read(PacketStream stream)
     {
-        var flag = stream.ReadUInt64();
-        var gsId = stream.ReadByte();
-
-        GameController.Instance.RequestEnterWorld(Connection, gsId);
+        Flag = stream.ReadUInt64();
+        GsId = new GameServerId(stream.ReadByte());
     }
 }

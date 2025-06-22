@@ -1,30 +1,15 @@
-﻿using System;
-using System.Net;
+﻿using System.Net;
 using AAEmu.Commons.Network.Core;
-using AAEmu.Commons.Utils;
-using AAEmu.Login.Core.Packets.G2L;
 using AAEmu.Login.Models;
 using NLog;
 
 namespace AAEmu.Login.Core.Network.Internal;
 
-public class InternalNetwork : Singleton<InternalNetwork>
+public class InternalNetwork(IInternalProtocolHandler protocolHandler) : IInternalNetwork
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    private Server _server;
-    private InternalProtocolHandler _handler;
-
-    public InternalNetwork()
-    {
-        _handler = new InternalProtocolHandler();
-
-        RegisterPacket(GLOffsets.GLRegisterGameServerPacket, typeof(GLRegisterGameServerPacket));
-        RegisterPacket(GLOffsets.GLPlayerEnterPacket, typeof(GLPlayerEnterPacket));
-        RegisterPacket(GLOffsets.GLPlayerReconnectPacket, typeof(GLPlayerReconnectPacket));
-        RegisterPacket(GLOffsets.GLRequestInfoPacket, typeof(GLRequestInfoPacket));
-        RegisterPacket(GLOffsets.GLGameServerLoadPacket, typeof(GLGameServerLoadPacket));
-    }
+    private Server? _server;
 
     public void Start()
     {
@@ -32,7 +17,7 @@ public class InternalNetwork : Singleton<InternalNetwork>
         var host =
             new IPEndPoint(config.Host.Equals("*") ? IPAddress.Any : IPAddress.Parse(config.Host), config.Port);
 
-        _server = new Server(host.Address, host.Port, _handler);
+        _server = new Server(host.Address, host.Port, protocolHandler);
         _server.Start();
 
         Logger.Info("InternalNetwork started");
@@ -40,14 +25,9 @@ public class InternalNetwork : Singleton<InternalNetwork>
 
     public void Stop()
     {
-        if (_server.IsStarted)
+        if (_server?.IsStarted == true)
             _server.Stop();
 
         Logger.Info("InternalNetwork stoped");
-    }
-
-    public void RegisterPacket(uint type, Type classType)
-    {
-        _handler.RegisterPacket(type, classType);
     }
 }

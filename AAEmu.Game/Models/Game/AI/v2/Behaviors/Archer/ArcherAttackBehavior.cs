@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using AAEmu.Commons.Utils;
-using AAEmu.Game.Core.Managers;
+﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.AI.v2.Params.Archer;
 using AAEmu.Game.Models.Game.Models;
@@ -204,7 +199,7 @@ public class ArcherAttackBehavior : BaseCombatBehavior
     private uint PickSkill(List<uint> skills)
     {
         if (skills.Count > 0)
-            return skills[Rand.Next(0, skills.Count)];
+            return skills[Random.Shared.Next(0, skills.Count)];
 
         if (!Ai.Owner.Cooldowns.CheckCooldown((uint)Ai.Owner.Template.BaseSkillId))
             return (uint)Ai.Owner.Template.BaseSkillId;

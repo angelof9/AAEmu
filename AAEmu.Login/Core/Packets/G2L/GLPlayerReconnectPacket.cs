@@ -1,21 +1,21 @@
 ﻿using AAEmu.Commons.Network;
-using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Internal;
+using AAEmu.Login.Models;
 
 namespace AAEmu.Login.Core.Packets.G2L;
 
-public class GLPlayerReconnectPacket : InternalPacket
+public class GLPlayerReconnectPacket() : InternalPacket(TypeId), IInternalPacket
 {
-    public GLPlayerReconnectPacket() : base(GLOffsets.GLPlayerReconnectPacket)
-    {
-    }
+    public new static ushort TypeId => GLOffsets.GLPlayerReconnectPacket;
+    
+    public GameServerId GsId { get; private set; }
+    public AccountId AccountId { get; private set; }
+    public uint Token { get; private set; }
 
     public override void Read(PacketStream stream)
     {
-        var gsId = stream.ReadByte();
-        var accountId = stream.ReadUInt32();
-        var token = stream.ReadUInt32();
-
-        LoginController.Instance.AddReconnectionToken(Connection, gsId, accountId, token);
+        GsId = new GameServerId(stream.ReadByte());
+        AccountId = new AccountId(stream.ReadUInt32());
+        Token = stream.ReadUInt32();
     }
 }

@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using AAEmu.Commons.Network;
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
@@ -646,7 +641,7 @@ public class Doodad : BaseUnit
         {
             if (phaseFunc == null) { continue; }
 
-            PhaseRatio = Rand.Next(0, 10000); // проверяем шанс для каждой фазовой функции
+            PhaseRatio = Random.Shared.Next(0, 10000); // проверяем шанс для каждой фазовой функции
 
             stop = phaseFunc.Use(caster, this);
             if (stop)

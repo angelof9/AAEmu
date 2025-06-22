@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-using AAEmu.Commons.Utils;
+﻿using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.GameData.Framework;
 using AAEmu.Game.Models.Game.FishSchools;
@@ -96,11 +93,11 @@ public class FishDetailsGameData : Singleton<FishDetailsGameData>, IGameDataLoad
 
     public float GetFishLength(uint templateId)
     {
-        return Rand.Next(_fishDetails[templateId].MinLength, _fishDetails[templateId].MaxLength);
+        return Random.Shared.Next(_fishDetails[templateId].MinLength, _fishDetails[templateId].MaxLength);
     }
     public float GetFishWeight(uint templateId)
     {
-        return Rand.Next(_fishDetails[templateId].MinWeight, _fishDetails[templateId].MaxWeight);
+        return Random.Shared.Next(_fishDetails[templateId].MinWeight, _fishDetails[templateId].MaxWeight);
     }
 
     public float GetFishWeight(uint templateId, float amount)

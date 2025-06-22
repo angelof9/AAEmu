@@ -1,16 +1,15 @@
 ﻿using System.Xml.Linq;
 using AAEmu.Commons.Network;
-using AAEmu.Commons.Utils;
-using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Login;
 
 namespace AAEmu.Login.Core.Packets.C2L;
 
-public class CARequestAuthTrionPacket : LoginPacket
+public class CARequestAuthTrionPacket() : LoginPacket(TypeId), ILoginPacket
 {
-    public CARequestAuthTrionPacket() : base(CLOffsets.CARequestAuthTrionPacket)
-    {
-    }
+    public new static ushort TypeId => CLOffsets.CARequestAuthTrionPacket;
+    
+    public string? Username { get; private set; }
+    public string? Password { get; private set; }
 
     public override void Read(PacketStream stream)
     {
@@ -38,8 +37,8 @@ public class CARequestAuthTrionPacket : LoginPacket
             Logger.Error("RequestAuthTrion: username or password is empty or whitespace");
             return;
         }
-
-        var token = Helpers.StringToByteArray(password);
-        LoginController.Login(Connection, username, token);
+        
+        Username = username;
+        Password = password;
     }
 }

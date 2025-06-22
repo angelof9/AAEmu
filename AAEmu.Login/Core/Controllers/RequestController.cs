@@ -1,23 +1,15 @@
 ﻿using System.Collections.Concurrent;
-using System.Threading.Tasks;
 using AAEmu.Login.Utils;
 
 namespace AAEmu.Login.Core.Controllers;
 
-public class RequestController : IdManager
+public class RequestController() : IdManager("RequestController", firstId, lastId, objTables, exclude), IRequestController
 {
-    private static RequestController _instance;
     private const uint firstId = 0x00000001;
     private const uint lastId = 0x00FFFFFF;
-    private static uint[] exclude = System.Array.Empty<uint>();
-    private static string[,] objTables = { { } };
-    private readonly ConcurrentDictionary<uint, TaskCompletionSource<bool>> _requests;
-    public static RequestController Instance => _instance ?? (_instance = new RequestController());
-
-    public RequestController() : base("RequestController", firstId, lastId, objTables, exclude)
-    {
-        _requests = new ConcurrentDictionary<uint, TaskCompletionSource<bool>>();
-    }
+    private static readonly uint[] exclude = [];
+    private static readonly string[,] objTables = { { } };
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<bool>> _requests = new();
 
     public (uint[] requestIds, Task result) Create(int count, int timeout)
     {
@@ -25,7 +17,7 @@ public class RequestController : IdManager
         var tasks = new Task[count];
         for (var i = 0; i < count; i++)
         {
-            var task = new TaskCompletionSource<bool>();
+            var task = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _requests.TryAdd(requestIds[i], task);
             tasks[i] = Task.WhenAny(task.Task, Task.Delay(timeout));
         }
