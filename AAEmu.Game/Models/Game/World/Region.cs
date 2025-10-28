@@ -8,27 +8,20 @@ using AAEmu.Game.Models.Game.Units;
 
 namespace AAEmu.Game.Models.Game.World;
 
-public class Region
+public class Region(WorldInstance worldInstance, int x, int y, uint zoneKey)
 {
-    private readonly WorldInstance _worldInstance;
+    private readonly WorldInstance _worldInstance = worldInstance;
+    // ReSharper disable once ChangeFieldTypeToSystemThreadingLock
     private readonly object _objectsLock = new();
     private GameObject[] _objects;
     private int _objectsSize, _charactersSize;
     private Region[] _neighbors;
     private int _playerCount;
 
-    public int X { get; }
-    public int Y { get; }
+    private int X { get; } = x;
+    private int Y { get; } = y;
     public int Id => Y + (1024 * X);
-    public uint ZoneKey { get; set; }
-
-    public Region(WorldInstance worldInstance, int x, int y, uint zoneKey)
-    {
-        _worldInstance = worldInstance;
-        X = x;
-        Y = y;
-        ZoneKey = zoneKey;
-    }
+    public uint ZoneKey { get; init; } = zoneKey;
 
     public void AddObject(GameObject obj)
     {
@@ -134,12 +127,12 @@ public class Region
                 // Ignore doodads here, as we have a special packet for those
                 if (go is Doodad)
                     continue;
-                
+
                 if (go is Gimmick)
                     continue;
 
                 // turn on the motion of the visible NPC
-                if (go is Npc npc && npc.Ai != null)
+                if (go is Npc { Ai: not null } npc)
                     npc.Ai.ShouldTick = true;
 
                 go.AddVisibleObject(objectAsCharacter);
@@ -183,19 +176,19 @@ public class Region
         if (_objects == null)
             return;
 
-        // remove all visible objects in the region from the player
+        // Special handling for characters (players)
         if (obj is Character character1)
         {
+            // Existing logic for sending SCUnitsRemovedPacket, SCDoodadsRemovedPacket, etc. remains unchanged.
             var unitIds = GetListId<Unit>([], character1.ObjId).ToArray();
             var units = GetList(new List<Unit>(), character1.ObjId);
             foreach (var t in units)
             {
-                if (t is Npc npc && npc.Ai != null)
+                if (t is Npc { Ai: not null } npc)
                 {
                     npc.Ai.ShouldTick = false;
                 }
             }
-
             for (var offset = 0; offset < unitIds.Length; offset += SCUnitsRemovedPacket.MaxCountPerPacket)
             {
                 var length = unitIds.Length - offset;
@@ -215,7 +208,7 @@ public class Region
                 Array.Copy(doodadIds, offset, temp, 0, temp.Length);
                 character1.SendPacket(new SCDoodadsRemovedPacket(last, temp));
             }
-            
+
             var gimmickIds = GetList<Gimmick>([], character1.ObjId).Select(g => g.ObjId).ToArray();
             for (var offset = 0; offset < gimmickIds.Length; offset += SCGimmicksRemovedPacket.MaxCountPerPacket)
             {
@@ -231,12 +224,44 @@ public class Region
                 character1.CurrentTarget = null;
                 character1.SendPacket(new SCTargetChangedPacket(character1.ObjId, 0));
             }
-            // TODO ... others types...
         }
+        // Special handling for non-player objects (NPCs, vehicles, doodads, etc.)
+        else
+        {
+            // Get all characters in this region that should receive a removal packet
+            var charactersInRegion = GetList(new List<Character>(), obj.ObjId);
 
-        // remove the object from all players in the region
-        foreach (var character in GetList(new List<Character>(), obj.ObjId))
-            obj.RemoveVisibleObject(character);
+            // --- IMPORTANT FIX ---
+            // Filter the list: keep only players who are NOT in the object's new region or its neighbors.
+            // This prevents sending "false" removal packets to players who should still see the object.
+            var charactersToRemoveFrom = new List<Character>();
+            var objRegion = obj.IsVisible ? WorldManager.Instance.GetRegion(obj) : null; // Get the current region of the object
+            foreach (var character in charactersInRegion)
+            {
+                // Check if the player is in the object's region or one of its neighboring regions.
+                // If yes, the player should still see the object, so no packet is sent.
+                if (objRegion != null)
+                {
+                    var objNeighbors = objRegion.GetNeighbors();
+                    var characterRegion = WorldManager.Instance.GetRegion(character); // Get the region of the player
+
+                    // If the player's region matches the object's region or one of its neighbors, skip this player.
+                    if (characterRegion != null && (characterRegion.Equals(objRegion) || objNeighbors.Contains(characterRegion)))
+                    {
+                        continue; // Skip, do not send packet to this player
+                    }
+                }
+                // If the player is outside the object's visibility range, add them to the removal list
+                charactersToRemoveFrom.Add(character);
+            }
+            // --- END OF FIX ---
+
+            // Send the removal packet ONLY to the filtered list of players
+            foreach (var character in charactersToRemoveFrom)
+            {
+                obj.RemoveVisibleObject(character);
+            }
+        }
     }
 
     public Region[] GetNeighbors()
@@ -263,7 +288,7 @@ public class Region
         return true;
     }
 
-    public bool IsEmpty()
+    private bool IsEmpty()
     {
         return _charactersSize <= 0;
     }
@@ -307,7 +332,7 @@ public class Region
         return result;
     }
 
-    public List<uint> GetListId<T>(List<uint> result, uint exclude) where T : class
+    private List<uint> GetListId<T>(List<uint> result, uint exclude) where T : class
     {
         GameObject[] temp;
         lock (_objectsLock)
@@ -338,8 +363,7 @@ public class Region
 
         foreach (var obj in temp)
         {
-            var item = obj as T;
-            if (item != null && obj.ObjId != exclude)
+            if (obj is T item && obj.ObjId != exclude)
                 result.Add(item);
         }
 
@@ -363,17 +387,17 @@ public class Region
             if (item == null || obj.ObjId == exclude)
                 continue;
 
-            var finalrad = sqrad;
+            var finalRad = sqrad;
             if (useModelSize)
-                finalrad += obj.ModelSize * obj.ModelSize;
+                finalRad += obj.ModelSize * obj.ModelSize;
 
             var dx = obj.Transform.World.Position.X - x;
             dx *= dx;
-            if (dx > finalrad)
+            if (dx > finalRad)
                 continue;
             var dy = obj.Transform.World.Position.Y - y;
             dy *= dy;
-            if (dx + dy < finalrad)
+            if (dx + dy < finalRad)
                 result.Add(item);
         }
 

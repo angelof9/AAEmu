@@ -12,9 +12,10 @@
         "DaysForTaxPayment": 7,
         "IgnoreFallDamageAccessLevel": 100,
         "GodMode": false,
-        "GeoDataMode": false,
+        "GeoDataMode": true,
         "PreLoadTerrain": false,
         "MaxInstances": 32,
-        "TargetPhysicsTps": 25.0
+        "TargetPhysicsTps": 25.0,
+        "ActabilityRate": 1.0
     }
 }

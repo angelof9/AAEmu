@@ -1,13 +1,13 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Numerics;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
-using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
 using AAEmu.Game.Models.Game.AI.v2.Params;
 using AAEmu.Game.Models.Game.AI.v2.Params.Almighty;
+using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Units;
@@ -55,6 +55,7 @@ public abstract class BaseCombatBehavior : Behavior
         var moveFlags = Ai.GetRealMovementFlags(speed);
         speed *= (delta.Milliseconds / 1000.0);
 
+        // Fish overrides
         if (Ai.Owner.Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId((uint)TagsEnum.Fish)))
         {
             // Sports fish movement logic
@@ -116,8 +117,7 @@ public abstract class BaseCombatBehavior : Behavior
             Ai.Owner.StopMovement();
             return;
         }
-        //Ai.Owner.Template.AttackStartRangeScale * 4,
-        //var range = 2f;// Ai.Owner.Template.AttackStartRangeScale * 6;
+
         var range = Ai.Owner.Template.AttackStartRangeScale;
         if (Ai.Owner.Template.UseRangeMod)
         {
@@ -132,62 +132,59 @@ public abstract class BaseCombatBehavior : Behavior
 
         var distanceToTarget = Ai.Owner.GetDistanceTo(target, true);
 
-        if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+        if (AppConfiguration.Instance.World.GeoDataMode && target != null)
         {
-            // TODO найдем путь к abuser, только если координаты цели изменились
-            if (target != null && Ai.PathNode?.pos2 != null && Ai.PathNode != null)
+            if (Ai.PathNode?.EndPointPos != null && Ai.PathNode != null)
             {
-                if (!Ai.PathNode.pos2.Equals(new Point(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z)))
+                // If not at target position (take model size error margin), then calculate new target route position
+                if (Math.Abs((Ai.PathNode.EndPointPos - target.Transform.World.Position).Length()) <= Ai.Owner.ModelSize)
                 {
                     var stopWatch = new Stopwatch();
                     stopWatch.Start();
-                    // TODO найдем путь к abuser
                     Ai.Owner.FindPath((Unit)target);
                     stopWatch.Stop();
                     // Toss warning if it took a long time
                     if (stopWatch.Elapsed.Ticks >= TimeSpan.TicksPerMillisecond)
-                        Logger.Warn($"FindPath took {stopWatch.Elapsed} for Ai.Owner.ObjId:{Ai.Owner.ObjId}, Owner.TemplateId {Ai.Owner.TemplateId}");
-                    // запомним новые координаты цели
-                    Ai.PathNode.pos2 = new Point(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z);
+                        Logger.Warn($"FindPath took {stopWatch.Elapsed} for Ai.Owner.ObjId:{Ai.Owner.ObjId}, Owner.TemplateId {Ai.Owner.TemplateId} @ {Ai.Owner.Transform}");
+                    // Save the target's new coordinates
+                    Ai.PathNode.EndPointPos =  new Vector3(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z);
                 }
             }
 
-            if (target != null && Ai.PathNode != null)
+            // If there is a PathNode set, and we still have a target, then find the next point to move to
+            if (Ai.PathNode != null)
             {
-                if (Ai.PathNode.findPath.Count > 0 && !Ai.PathNode.findPath[0].Equals(Point.Zero))
+                if (Ai.PathNode.FoundPath.Count > 0 && !Ai.PathNode.FoundPath.Peek().Equals(Vector3.Zero))
                 {
-                    // TODO взять точку к которой движемся
-                    var position = new Vector3(Ai.PathNode.Position.X, Ai.PathNode.Position.Y, Ai.PathNode.Position.Z);
-                    distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, position, true);
+                    var nextPathPoint = Ai.PathNode.FoundPath.Peek();
+                    distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, nextPathPoint, true);
                     if (distanceToTarget > range)
                     {
-                        Ai.Owner.MoveTowards(position, (float)speed, moveFlags);
+                        Ai.Owner.MoveTowards(nextPathPoint, (float)speed, moveFlags, range);
                     }
                     else
                     {
-                        // TODO взять следующую точку к которой движемся
-                        Ai.PathNode.Current++;
-                        if (Ai.PathNode.Current >= Ai.PathNode.findPath.Count)
+                        if (Ai.PathNode.FoundPath.Count <= 0)
                         {
                             Ai.Owner.StopMovement();
-                            Ai.PathNode.findPath = [];
+                            Ai.PathNode.FoundPath = [];
                             return;
                         }
 
-                        Ai.PathNode.Position = Ai.PathNode.findPath[(int)Ai.PathNode.Current];
+                        Ai.PathNode.CurrentTargetPos = Ai.PathNode.FoundPath.Dequeue();
                     }
                 }
                 else
                 {
                     if (distanceToTarget > range)
-                        Ai.Owner.MoveTowards(target.Transform.World.Position, (float)speed, moveFlags);
+                        Ai.Owner.MoveTowards(target.Transform.World.Position, (float)speed, moveFlags, range);
                     else
                         Ai.Owner.StopMovement();
                 }
             }
             else
             {
-                if (distanceToTarget > range && target != null)
+                if (distanceToTarget > range)
                     Ai.Owner.MoveTowards(target.Transform.World.Position, (float)speed, moveFlags);
                 else
                     Ai.Owner.StopMovement();
@@ -250,14 +247,14 @@ public abstract class BaseCombatBehavior : Behavior
             }
 
             if (Ai.Owner.CurrentTarget == null)
-                return true; // нет цели, возвращаемся
+                return true; // no target, returning
 
             var distanceToTarget = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, Ai.Owner.CurrentTarget.Transform.World.Position, true);
             var distanceToIdlePosition = MathUtil.CalculateDistance(Ai.Owner.Transform.World.Position, Ai.IdlePosition, true);
 
             var res = distanceToTarget > returnDistance || distanceToIdlePosition > returnDistance;
             if (res)
-                res = distanceToIdlePosition <= absoluteReturnDistance; // если больше, то нужен телепорт на место спавна
+                res = distanceToIdlePosition <= absoluteReturnDistance; // if it's greater, then we need a teleport to the spawn point
             return res;
         }
     }
@@ -281,21 +278,18 @@ public abstract class BaseCombatBehavior : Behavior
         {
             //Ai.Owner.LookTowards(abuser.Transform.World.Position); // Prevents archers from escaping (they spin around all the time)
 
-            if (AppConfiguration.Instance.World.GeoDataMode && Ai.Owner.Transform.WorldId > 0)
+            if (AppConfiguration.Instance.World.GeoDataMode)
             {
-                // включена геодата и не основной мир
-                // geodata enabled and not the main world
                 if (Ai.Owner.UnitIsVisible(abuser) && !abuser.IsDead)
                 {
                     if (Ai.Owner.CurrentAggroTarget != abuser && !Ai.AlreadyTargeted)
                     {
-                        // TODO найдем путь к abuser
+                        // TODO: find the path to abuser
                         Ai.Owner.FindPath(abuser);
                     }
                     Ai.Owner.CurrentAggroTarget = abuser;
                     Ai.Owner.SetTarget(abuser);
                     UpdateAggroHelp(abuser);
-
                     return true;
                 }
             }
@@ -337,7 +331,7 @@ public abstract class BaseCombatBehavior : Behavior
         if (_pipeName == "phase_dragon_ground" || _phaseType == 1) // "PHASE_DRAGON_GROUND = 1;"
         {
             // try to find Z first in GeoData, and then in HeightMaps, if not found, leave Z as it is
-            var updZ = WorldManager.Instance.GetHeight(Ai.Owner.Transform.ZoneId, Ai.Owner.Transform.Local.Position.X, Ai.Owner.Transform.Local.Position.Y);
+            var updZ = Ai.Owner.ParentWorld.Template.GeoData.GetHeight(Ai.Owner.Transform.World.Position); // WorldManager.Instance.GetHeight(Ai.Owner.Transform.ZoneId, Ai.Owner.Transform.Local.Position.X, Ai.Owner.Transform.Local.Position.Y, Ai.Owner.Transform.Local.Position.Z);
             Ai.Owner.Transform.Local.SetHeight(updZ);
         }
         else if (_pipeName == "phase_dragon_fly_hovering" || _phaseType == 2) // "PHASE_DRAGON_HOVERING = 2;"
@@ -507,5 +501,24 @@ public abstract class BaseCombatBehavior : Behavior
         }
 
         return availableSkillLists;
+    }
+
+    /// <summary>
+    /// Returns nearby players within range, in front, and not greeted recently.
+    /// </summary>
+    public static List<Character> GetPlayersInRange(
+        Unit owner,
+        float range,
+        double fovScale,
+        Dictionary<uint, DateTime> greeted,
+        TimeSpan cooldown)
+    {
+        var now = DateTime.UtcNow;
+
+        return WorldManager
+            .GetAround<Character>(owner, range, true)
+            .Where(p => MathUtil.IsFront(owner, p, fovScale))
+            .Where(p => !greeted.TryGetValue(p.ObjId, out var last) || now - last >= cooldown)
+            .ToList();
     }
 }

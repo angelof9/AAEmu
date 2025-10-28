@@ -1,4 +1,5 @@
-﻿using AAEmu.Commons.Network;
+﻿using System.Text.Json.Serialization;
+using AAEmu.Commons.Network;
 // ReSharper disable ClassNeverInstantiated.Global
 
 namespace AAEmu.Game.Models.Game;
@@ -59,7 +60,7 @@ public class WorldConfig
     /// <summary>
     /// Number of days 1 week worth of tax pays for, set this to 3640 would make 1 tax payment last for about 10 years.
     /// </summary>
-    public uint DaysForTaxPayment { get; set; } = 7u; 
+    public uint DaysForTaxPayment { get; set; } = 7u;
 
     /// <summary>
     /// Set a minimum access-level that a character must have to ignore falling damage (for devs)
@@ -91,6 +92,11 @@ public class WorldConfig
     /// Target Ticks per Second to use for Physics threads
     /// </summary>
     public float TargetPhysicsTps { get; set; } = 25f;
+
+    /// <summary>
+    /// Server-side Actability Points multiplier (on top of buffs)
+    /// </summary>
+    public double ActabilityRate { get; set; } = 1.0;
 }
 
 public class DungeonLoadConfig
@@ -202,6 +208,15 @@ public class SpecialtyConfig
     /// Time in minutes before a traded pack is no longer counted towards the trade rate calculation
     /// </summary>
     public double RatioRegenTickMinutes { get; set; } = 60f;
+
+    /// <summary>
+    /// Time in minutes to delay trade pack reward mail delivery. Default is 8 hours.
+    /// </summary>
+    /// <remarks>
+    /// The default value is 8 hours. This setting controls how long after delivery 
+    /// a player must wait before receiving their trade pack reward via mail.
+    /// </remarks>
+    public double TradePackMailDelayInMinutes { get; set; } = 480f;
 }
 
 public class ScriptsConfig
