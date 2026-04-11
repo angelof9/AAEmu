@@ -1,4 +1,4 @@
-﻿using AAEmu.Commons.Utils;
+using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.UnitManagers;
@@ -23,6 +23,7 @@ using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Skills.Utils;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.StaticValues;
+using AAEmu.Game.Physics;
 using AAEmu.Game.Models.Tasks.Skills;
 using AAEmu.Game.Utils;
 
@@ -47,6 +48,11 @@ public class Skill
     public bool Cancelled { get; set; } = false;
     public Action Callback { get; set; }
 
+    /// <summary>
+    /// Multiplier that can be added as an additional modifier to casting times
+    /// </summary>
+    public float CastTimeMultiplier { get; set; } = 1f;
+
     //public bool isAutoAttack;
     //public SkillTask autoAttackTask;
 
@@ -63,7 +69,7 @@ public class Skill
         Id = template.Id;
         Template = template;
         if (owner != null)
-            Level = template.LevelStep > 0 ? (byte)((owner.GetAbLevel((AbilityType)template.AbilityId) - template.AbilityLevel) / template.LevelStep + 1) : (byte)1;
+            Level = template.LevelStep > 0 ? (byte)((owner.GetAbLevel(template.AbilityId) - template.AbilityLevel) / template.LevelStep + 1) : (byte)1;
         else
             Level = 1;
     }
@@ -202,7 +208,7 @@ public class Skill
 
         // HackFix: for quest Unblock the Spring ( 3707 ), unable to use the boulder because of being "too close"
         // The range of skill Remove Stone ( 16462 ) is defined as 100~200 which can't possibly be correct 
-        if ((Template.TargetType == SkillTargetType.Doodad) && (Template.MinRange >= 100))
+        if (Template.TargetType == SkillTargetType.Doodad && Template.MinRange >= 100)
         {
             minRangeCheck = Template.MinRange / 100.0;
         }
@@ -235,7 +241,7 @@ public class Skill
 
         // TODO: Remove exception for doodads
         // TODO: Remove exceptions for slave initiated by Doodads (needed to fix repair points on ships)
-        if ((targetDist > maxRangeCheck) && (target is not Doodad) && (target is not Slave))
+        if (targetDist > maxRangeCheck && target is not Doodad && target is not Slave)
         {
             SkillTlIdManager.ReleaseId(TlId);
             TlId = 0;
@@ -259,7 +265,7 @@ public class Skill
                     else
                     {
                         var returnPointId =
-                            PortalManager.Instance.GetDistrictReturnPoint((uint)character.ReturnDistrictId,
+                            PortalManager.Instance.GetDistrictReturnPoint(character.ReturnDistrictId,
                                 character.Faction.Id);
                         trp = PortalManager.Instance.GetRecallById(returnPointId);
                     }
@@ -293,6 +299,7 @@ public class Skill
         var castTime = 0;
         if (Template.CastingTime > 0)
             castTime = (int)(unit.CastTimeMul * unit.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.CastTime, Template.CastingTime));
+        castTime = (int)Math.Round(castTime * CastTimeMultiplier);
 
         /*
         // TODO: Replace Old code
@@ -534,8 +541,7 @@ public class Skill
 
     private static BaseUnit SetInitialTarget(BaseUnit caster, SkillCastTarget targetCaster)
     {
-        var positionUnit = new BaseUnit();
-        positionUnit.ObjId = uint.MaxValue;
+        var positionUnit = new BaseUnit { ObjId = uint.MaxValue };
         positionUnit.Transform = caster.Transform.CloneDetached(positionUnit);
         switch (targetCaster)
         {
@@ -777,7 +783,7 @@ public class Skill
 
         // TODO: добавил, так как для квеста 3469 нет события OnItemUse
         // TODO: added since there is no OnItemUse event for quest 3469 and other quests that require the use on non-consuming items
-        if ((Cancelled == false) && (casterCaster is SkillItem { ItemTemplateId: > 0 } item && caster is Character player))
+        if (Cancelled == false && casterCaster is SkillItem { ItemTemplateId: > 0 } item && caster is Character player)
         {
             player.ItemUse(item.ItemId);
         }
@@ -853,12 +859,23 @@ public class Skill
         {
             possibleTargets.Add(targetSelf);
         }
+
+        ShipSiegeAoEHit.AppendHostileShipsHitBySiegeHullAoE(caster, Template, targetSelf, targetCaster, possibleTargets);
+
         // Filter out duplicate entries and non-existing
         possibleTargets = possibleTargets.Distinct().ToList();
         // Add origin in case of no targets and using a target position cast
-        if ((possibleTargets.Count <= 0) && (targetCaster is SkillCastPositionTarget))
+        if (possibleTargets.Count <= 0 && targetCaster is SkillCastPositionTarget)
         {
             possibleTargets.Add(caster);
+        }
+
+        if (Template.TargetAreaCount > 0 && possibleTargets.Count > Template.TargetAreaCount)
+        {
+            possibleTargets = possibleTargets
+                .OrderBy(t => t.GetDistanceTo(targetSelf))
+                .Take(Template.TargetAreaCount)
+                .ToList();
         }
 
         foreach (var target in possibleTargets)
@@ -1007,7 +1024,7 @@ public class Skill
                 if (lastAppliedEffect != null &&
                     effect.Template is NpcSpawnerSpawnEffect &&
                     effect.EffectId == lastAppliedEffect.EffectId &&
-                    ((effect.Template as NpcSpawnerSpawnEffect).SpawnerId == (lastAppliedEffect.Template as NpcSpawnerSpawnEffect).SpawnerId))
+                    (effect.Template as NpcSpawnerSpawnEffect).SpawnerId == (lastAppliedEffect.Template as NpcSpawnerSpawnEffect).SpawnerId)
                 {
                     continue;
                 }
@@ -1016,13 +1033,6 @@ public class Skill
                 effectsToApply.Add((target, effect));
                 lastAppliedEffect = effect;
                 //effect.Template?.Apply(caster, casterCaster, target, targetCaster, new CastSkill(Template.Id, TlId), new EffectSource(this), skillObject, DateTime.UtcNow, packets);
-
-                // TODO: Fix this HACK, only use the first target if it's a position.
-                // Hack added to fix SummonDoodad issues from Skill 15343, spawns Recovered Treasure Chest ( 3483 )
-                if (targetCaster is SkillCastPositionTarget)
-                {
-                    break;
-                }
             }
         }
 
@@ -1156,7 +1166,7 @@ public class Skill
                     // для квеста 3478, требуется чтобы caster был Npc
                     // для квеста 3993 должен выполняться эффект, а он прерывался из-за неправильного сравнения!
                     var npc = caster.ParentWorld.GetNpcByTemplateId(nsse.NpcId);
-                    var effectiveNpc = npc ?? (target as Npc);
+                    var effectiveNpc = npc ?? target as Npc;
 
                     // If we have an effective NPC and it is dead, skip the effect - KillNPCWithoutCorpse happens before death
                     if (effectiveNpc != null && effectiveNpc.IsDead)
@@ -1210,7 +1220,7 @@ public class Skill
             // but has none attached, consume 1 of the source item instead
             // TODO: Check if this is intended behaviour, or if this is a bug in the compact.sqlite3 file
             var item = ItemManager.Instance.GetItemByItemId(skillItem.ItemId);
-            if ((item?.Template.UseSkillAsReagent == true) && (reagents.Count <= 0) && (skillProducts.Count <= 0) && (consumedItems.Count <= 0))
+            if (item?.Template.UseSkillAsReagent == true && reagents.Count <= 0 && skillProducts.Count <= 0 && consumedItems.Count <= 0)
             {
                 consumedItems.Add((item, 1));
                 Logger.Debug($"Consumed item template 1 x {item.TemplateId} ({item.Id}) because of missing reagent information with skill {Template.Id}");
@@ -1222,7 +1232,7 @@ public class Skill
             caster.BroadcastPacket(packets, true);
 
         // Hack to consume TreasureMap items (don't know how else to add this)
-        if ((player != null) && (Template.Id == SkillsEnum.DigUpTreasureChestMarkedOnMap))
+        if (player != null && Template.Id == SkillsEnum.DigUpTreasureChestMarkedOnMap)
         {
             var treasureMapToUse = UnitRequirementsGameData.Instance.GetTreasureMapWithCoordinatesNearbyItem(player, 5.0);
             if (treasureMapToUse != null)
@@ -1274,7 +1284,7 @@ public class Skill
             }
 
             // Lower cap at 1
-            if ((Template.ConsumeLaborPower > 0) && (laborCost < 1))
+            if (Template.ConsumeLaborPower > 0 && laborCost < 1)
                 laborCost = 1;
 
             if (laborCost > 0 && !Cancelled && character.LaborPower >= laborCost)
@@ -1284,7 +1294,7 @@ public class Skill
             }
 
             // Add vocation where needed
-            if ((Template.GainLifePoint > 0) && !Cancelled)
+            if (Template.GainLifePoint > 0 && !Cancelled)
             {
                 // We multiply the BASE value for server settings, not the total (although I don't think this would affect anything since we don't really have a +1 badge/action buff)
                 character.ChangeGamePoints(GamePointKind.Vocation, (int)Math.Ceiling(AppConfiguration.Instance.World.VocationRate * Template.GainLifePoint));
@@ -1431,7 +1441,7 @@ AlwaysHit:
     /// <returns></returns>
     public int ManaCost(Unit caster)
     {
-        var baseCost = ((caster.GetAbLevel((AbilityType)Template.AbilityId) - 1) * 1.6 + 8) * 3 / 3.65;
+        var baseCost = ((caster.GetAbLevel(Template.AbilityId) - 1) * 1.6 + 8) * 3 / 3.65;
         var cost2 = baseCost * Template.ManaLevelMd + Template.ManaCost;
         var manaCost = (int)caster.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.ManaCost, cost2);
         return manaCost;

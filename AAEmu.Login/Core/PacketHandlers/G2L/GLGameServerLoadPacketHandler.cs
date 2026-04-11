@@ -3,11 +3,15 @@ using AAEmu.Login.Core.Packets.G2L;
 
 namespace AAEmu.Login.Core.PacketHandlers.G2L;
 
-public class GLGameServerLoadPacketHandler()
-    : IInternalPacketHandler<GLGameServerLoadPacket>
+/// <summary>
+/// Handles the <see cref="GLGameServerLoadPacket"/> to update the load of a game server.
+/// </summary>
+public class GLGameServerLoadPacketHandler : IInternalPacketHandler<GLGameServerLoadPacket>
 {
-    public void Execute(GLGameServerLoadPacket packet, InternalConnection connection)
+    public Task Execute(GLGameServerLoadPacket packet, InternalConnection connection,
+        CancellationToken cancellationToken)
     {
         connection.GameServer!.Load = packet.Load;
+        return Task.CompletedTask;
     }
 }

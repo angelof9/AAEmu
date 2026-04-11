@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-
-using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
-using AAEmu.Game.Models.Game.Units;
+﻿using AAEmu.Game.Models.Game.Units;
 
 using Jitter2;
 using Jitter2.Collision;
@@ -130,9 +126,9 @@ public class Buoyancy : ForceGenerator
                 for (var k = 0; k < subdivisions; k++)
                 {
                     JVector testVector;
-                    testVector.X = body.Shapes[0].WorldBoundingBox.Min.X + (diff.X / (subdivisions - 1)) * i;
-                    testVector.Y = body.Shapes[0].WorldBoundingBox.Min.Y + (diff.Y / (subdivisions - 1)) * e;
-                    testVector.Z = body.Shapes[0].WorldBoundingBox.Min.Z + (diff.Z / (subdivisions - 1)) * k;
+                    testVector.X = body.Shapes[0].WorldBoundingBox.Min.X + diff.X / (subdivisions - 1) * i;
+                    testVector.Y = body.Shapes[0].WorldBoundingBox.Min.Y + diff.Y / (subdivisions - 1) * e;
+                    testVector.Z = body.Shapes[0].WorldBoundingBox.Min.Z + diff.Z / (subdivisions - 1) * k;
 
                     if (NarrowPhase.PointTest(body.Shapes[0], in testVector))
                     {
@@ -206,7 +202,7 @@ public class Buoyancy : ForceGenerator
             // Skip if no controller or mass
             if (slave.ShipController == null || slave.ShipController.ShipModel.Mass <= 0)
                 continue;
-            
+
             // Skip simulation if still summoning
             body.AffectedByGravity = slave.SpawnTime.AddSeconds(slave.Template.PortalTime) <= DateTime.UtcNow;
             if (!body.AffectedByGravity)
@@ -223,7 +219,7 @@ public class Buoyancy : ForceGenerator
 
             var depth = waterSurfaceLevel - body.Position.Y;
             if (depth <= 0) continue;
-            
+
             ApplyDrag(body, slave.ShipController.ShipModel.MassBoxSizeX, slave.ShipController.ShipModel.MassBoxSizeY, slave.ShipController.ShipModel.MassBoxSizeZ);
             // Calculate submerged depth and buoyancy force
             var submergedDepth = Math.Max(0, waterSurfaceLevel - body.Position.Y);

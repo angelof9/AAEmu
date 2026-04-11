@@ -2,7 +2,7 @@
 
 namespace AAEmu.Game.Models.Game.Units;
 
-public enum UnitCustomModelType
+public enum UnitCustomModelType: byte
 {
     None = 0,
     Hair = 1,
@@ -10,16 +10,10 @@ public enum UnitCustomModelType
     Face = 3
 }
 
-public class FixedDecalAsset : PacketMarshaler
+public class FixedDecalAsset(uint assetId = 0, float assetWeight = 0) : PacketMarshaler
 {
-    public uint AssetId { get; set; }
-    public float AssetWeight { get; set; }
-
-    public FixedDecalAsset(uint assetId = 0, float assetWeight = 0)
-    {
-        AssetId = assetId;
-        AssetWeight = assetWeight;
-    }
+    public uint AssetId { get; set; } = assetId;
+    public float AssetWeight { get; set; } = assetWeight;
 
     public override void Read(PacketStream stream)
     {
@@ -44,7 +38,7 @@ public class FaceModel : PacketMarshaler
     public short MovableDecalMoveX { get; set; }
     public short MovableDecalMoveY { get; set; }
 
-    public FixedDecalAsset[] FixedDecalAsset { get; }
+    private FixedDecalAsset[] FixedDecalAsset { get; }
 
     public uint DiffuseMapId { get; set; }
     public uint NormalMapId { get; set; }
@@ -133,10 +127,9 @@ public class FaceModel : PacketMarshaler
 public class UnitCustomModelParams : PacketMarshaler
 {
     private UnitCustomModelType _type;
-    public uint Id { get; private set; }
-    public uint HairColorId { get; private set; }
-    public uint SkinColorId { get; private set; }
-    public uint ModelId { get; private set; }
+    private uint HairColorId { get; set; }
+    private uint SkinColorId { get; set; }
+    private uint ModelId { get; set; }
     public FaceModel Face { get; private set; }
 
     public UnitCustomModelParams(UnitCustomModelType type = UnitCustomModelType.None)
@@ -144,15 +137,10 @@ public class UnitCustomModelParams : PacketMarshaler
         SetType(type);
     }
 
-    public UnitCustomModelParams SetId(uint id)
-    {
-        Id = id;
-        return this;
-    }
     public UnitCustomModelParams SetType(UnitCustomModelType type)
     {
         _type = type;
-        if (_type == UnitCustomModelType.Face)
+        if (_type >= UnitCustomModelType.Face)
             Face = new FaceModel();
         return this;
     }
@@ -184,18 +172,18 @@ public class UnitCustomModelParams : PacketMarshaler
     {
         SetType((UnitCustomModelType)stream.ReadByte()); // ext
 
-        if (_type == UnitCustomModelType.None)
+        if (_type <= UnitCustomModelType.None)
             return;
 
         HairColorId = stream.ReadUInt32();
 
-        if (_type == UnitCustomModelType.Hair)
+        if (_type <= UnitCustomModelType.Hair)
             return;
 
         SkinColorId = stream.ReadUInt32();
         ModelId = stream.ReadUInt32();
 
-        if (_type == UnitCustomModelType.Skin)
+        if (_type <= UnitCustomModelType.Skin)
             return;
 
         Face.Read(stream);
@@ -204,20 +192,18 @@ public class UnitCustomModelParams : PacketMarshaler
     public override PacketStream Write(PacketStream stream)
     {
         stream.Write((byte)_type); // ext
-        if (_type == UnitCustomModelType.None)
-            return stream;
 
+        if (_type < UnitCustomModelType.Hair)
+            return stream;
         stream.Write(HairColorId);
 
-        if (_type == UnitCustomModelType.Hair)
+        if (_type < UnitCustomModelType.Skin)
             return stream;
-
         stream.Write(SkinColorId);
         stream.Write(ModelId);
 
-        if (_type == UnitCustomModelType.Skin)
+        if (_type < UnitCustomModelType.Face)
             return stream;
-
         stream.Write(Face);
 
         return stream;

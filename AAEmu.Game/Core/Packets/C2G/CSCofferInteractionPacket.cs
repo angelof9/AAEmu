@@ -5,12 +5,8 @@ using AAEmu.Game.Models.Game;
 
 namespace AAEmu.Game.Core.Packets.C2G;
 
-public class CSCofferInteractionPacket : GamePacket
+public class CSCofferInteractionPacket() : GamePacket(CSOffsets.CSCofferInteractionPacket, 1)
 {
-    public CSCofferInteractionPacket() : base(CSOffsets.CSCofferInteractionPacket, 1)
-    {
-    }
-
     public override void Read(PacketStream stream)
     {
         var cofferObjId = stream.ReadBc();
@@ -19,7 +15,7 @@ public class CSCofferInteractionPacket : GamePacket
         Logger.Warn("CofferInteraction, cofferObjId: {0}, opening: {1}", cofferObjId, opening);
         if (opening)
         {
-            if (!DoodadManager.OpenCofferDoodad(Connection.ActiveChar, cofferObjId))
+            if (!DoodadManager.Instance.OpenCofferDoodad(Connection.ActiveChar, cofferObjId))
             {
                 Logger.Warn($"{Connection.ActiveChar.Name} failed to Open coffer objId {cofferObjId}");
                 // If it failed, the coffer is likely in use by somebody else
@@ -28,7 +24,7 @@ public class CSCofferInteractionPacket : GamePacket
         }
         else
         {
-            if (!DoodadManager.CloseCofferDoodad(Connection.ActiveChar, cofferObjId))
+            if (!DoodadManager.Instance.CloseCofferDoodad(Connection.ActiveChar, cofferObjId))
                 Logger.Warn($"{Connection.ActiveChar.Name} failed to Close coffer objId {cofferObjId}");
         }
     }

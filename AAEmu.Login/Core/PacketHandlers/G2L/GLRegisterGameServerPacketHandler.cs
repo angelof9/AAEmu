@@ -9,27 +9,33 @@ using NLog;
 
 namespace AAEmu.Login.Core.PacketHandlers.G2L;
 
+/// <summary>
+/// Handles the <see cref="GLRegisterGameServerPacket"/> which is sent by the game server to register itself with the
+/// login server.
+/// </summary>
 public class GLRegisterGameServerPacketHandler(IGameController gameController, IOptions<AppConfiguration> appConfig)
     : IInternalPacketHandler<GLRegisterGameServerPacket>
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    public void Execute(GLRegisterGameServerPacket packet, InternalConnection connection)
+    public Task Execute(GLRegisterGameServerPacket packet, InternalConnection connection,
+        CancellationToken cancellationToken)
     {
         if (packet.SecretKey != appConfig.Value.SecretKey)
         {
             Logger.Error($"Connection {connection.Ip}, bad secret key");
-            Task.Run(() => SendPacketWithDelay(5000, new LGRegisterGameServerPacket(GSRegisterResult.Error)));
+            Task.Run(() => SendPacketWithDelay(5000, new LGRegisterGameServerPacket(GSRegisterResult.Error)),
+                cancellationToken);
             // Connection.SendPacket(new LGRegisterGameServerPacket(GSRegisterResult.Error));
-            return;
+            return Task.CompletedTask;
         }
 
         gameController.Add(packet.GsId, packet.Mirrors!, connection);
-        return;
+        return Task.CompletedTask;
 
         async Task SendPacketWithDelay(int delay, InternalPacket message)
         {
-            await Task.Delay(delay);
+            await Task.Delay(delay, cancellationToken);
             connection.SendPacket(message);
         }
     }

@@ -11,22 +11,23 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class SaveManager : Singleton<SaveManager>
+public class SaveManager(
+    ITaskManager taskManager,
+    IHousingManager housingManager,
+    IMailManager mailManager,
+    IItemManager itemManager,
+    IAuctionManager auctionManager,
+    ICrimeManager crimeManager,
+    IWorldManager worldManager) : Singleton<SaveManager>, ISaveManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private double Delay = 1;
-    private bool _enabled;
-    private bool _isSaving;
-    private object _lock = new();
+    private bool _enabled = false;
+    private bool _isSaving = false;
+    private readonly object _lock = new();
     private SaveTickStartTask saveTask;
     public ShutdownTask ShutdownTask { get; set; } = null;
-
-    public SaveManager()
-    {
-        _enabled = false;
-        _isSaving = false;
-    }
 
     public void Initialize()
     {
@@ -56,7 +57,7 @@ public class SaveManager : Singleton<SaveManager>
     {
         // Logger.Warn("SaveTickStart: Started");
         saveTask = new SaveTickStartTask();
-        TaskManager.Instance.Schedule(saveTask, TimeSpan.FromMinutes(Delay), TimeSpan.FromMinutes(Delay));
+        taskManager.Schedule(saveTask, TimeSpan.FromMinutes(Delay), TimeSpan.FromMinutes(Delay));
     }
 
     public bool DoSave()
@@ -78,17 +79,19 @@ public class SaveManager : Singleton<SaveManager>
                     using (var transaction = connection.BeginTransaction())
                     {
                         // Houses
-                        var savedHouses = HousingManager.Instance.Save(connection, transaction);
+                        var savedHouses = housingManager.Save(connection, transaction);
                         // Mail
-                        var savedMails = MailManager.Instance.Save(connection, transaction);
+                        var savedMails = mailManager.Save(connection, transaction);
                         // Items
-                        var saveItems = ItemManager.Instance.Save(connection, transaction);
-                        //Auction House
-                        var savedAuctionHouse = AuctionManager.Instance.Save(connection, transaction);
+                        var saveItems = itemManager.Save(connection, transaction);
+                        // Auction House
+                        var savedAuctionHouse = auctionManager.Save(connection, transaction);
+                        // Crimes
+                        var savedCrimes = crimeManager.Save(connection, transaction);
 
                         // Characters
                         var savedCharacters = 0;
-                        foreach (var c in WorldManager.Instance.GetAllCharacters())
+                        foreach (var c in worldManager.GetAllCharacters())
                         {
                             if (c.Save(connection, transaction))
                                 savedCharacters++;
@@ -98,7 +101,7 @@ public class SaveManager : Singleton<SaveManager>
 
                         // Slaves
                         var savedSlaves = 0;
-                        foreach (var worldInstance in WorldManager.Instance.GetWorlds())
+                        foreach (var worldInstance in worldManager.GetWorlds())
                         {
                             foreach (var slave in worldInstance.GetAllSlaves())
                             {
@@ -112,6 +115,7 @@ public class SaveManager : Singleton<SaveManager>
                         totalCommits += savedMails.Item1 + savedMails.Item2;
                         totalCommits += saveItems.Item1 + saveItems.Item2 + saveItems.Item3;
                         totalCommits += savedAuctionHouse.Item1 + savedAuctionHouse.Item2;
+                        totalCommits += savedCrimes.Item1 + savedCrimes.Item2;
                         totalCommits += savedCharacters;
                         totalCommits += savedSlaves;
 
@@ -126,16 +130,18 @@ public class SaveManager : Singleton<SaveManager>
                             {
                                 transaction.Commit();
 
-                                if ((savedHouses.Item1 + savedHouses.Item2) > 0)
+                                if (savedHouses.Item1 + savedHouses.Item2 > 0)
                                     Logger.Debug($"Updated {savedHouses.Item1} and deleted {savedHouses.Item2} houses ...");
-                                if ((savedMails.Item1 + savedMails.Item2) > 0)
+                                if (savedMails.Item1 + savedMails.Item2 > 0)
                                     Logger.Debug($"Updated {savedMails.Item1} and deleted {savedMails.Item2} mails ...");
-                                if ((saveItems.Item1 + saveItems.Item2) > 0)
+                                if (saveItems.Item1 + saveItems.Item2 > 0)
                                     Logger.Debug($"Updated {saveItems.Item1} and deleted {saveItems.Item2} items in {saveItems.Item3} containers ...");
-                                if ((saveItems.Item3) > 0)
+                                if (saveItems.Item3 > 0)
                                     Logger.Debug($"Updated {saveItems.Item3} item containers ...");
-                                if ((savedAuctionHouse.Item1 + savedAuctionHouse.Item2) > 0)
+                                if (savedAuctionHouse.Item1 + savedAuctionHouse.Item2 > 0)
                                     Logger.Debug($"Updated {savedAuctionHouse.Item1} and deleted {savedAuctionHouse.Item2} auction items ...");
+                                if (savedCrimes.Item1 + savedCrimes.Item2 > 0)
+                                    Logger.Debug($"Updated {savedCrimes.Item1} and deleted {savedCrimes.Item2} crime events ...");
                                 if (savedCharacters > 0)
                                     Logger.Debug($"Updated {savedCharacters} characters ...");
                                 if (savedSlaves > 0)

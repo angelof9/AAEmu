@@ -29,8 +29,8 @@ public class NpcSpawner : Spawner<Npc>
     private int _scheduledCount;
     // Вычисляемое свойство, возвращающее текущее количество NPC из SpawnedNpcs для данного SpawnerId.
     private int CurrentSpawnCount => SpawnedNpcs.TryGetValue(SpawnerId, out var list) ? list.Count : 0;
-    private bool IsSpawnScheduled { get; set; }
-    private bool IsDespawnScheduled { get; set; }
+    private bool IsSpawnScheduled { get; set; } = false;
+    private bool IsDespawnScheduled { get; set; } = false;
     private bool RespawnDenied { get; set; }
     // ReSharper disable once InconsistentNaming
     // ReSharper disable once ChangeFieldTypeToSystemThreadingLock
@@ -44,15 +44,9 @@ public class NpcSpawner : Spawner<Npc>
     public NpcSpawnerTemplate Template { get; set; }
     public List<NpcSpawnerNpc> SpawnableNpcs { get; set; } = []; // List of NPCs that can be spawned
     public ConcurrentDictionary<uint, List<Npc>> SpawnedNpcs { get; set; } = new(); // <SpawnerId, List of spawned NPCs>
-    private DateTime _lastSpawnTime = DateTime.MinValue;
+    private readonly DateTime _lastSpawnTime = DateTime.MinValue;
     private readonly Dictionary<int, SpawnerPlayerCountCache> _playerCountCache = new();
     private readonly Dictionary<int, SpawnerPlayerInRadiusCache> _playerInRadiusCache = new();
-
-    public NpcSpawner()
-    {
-        IsSpawnScheduled = false;
-        IsDespawnScheduled = false;
-    }
 
     /// <summary>
     /// Initializes the list of SpawnableNpcs based on Template.Npcs.
@@ -342,17 +336,18 @@ public class NpcSpawner : Spawner<Npc>
             if (spawnerTemplate == null)
                 continue;
 
+            var hasDefinedTimeWindow = spawnerTemplate.StartTime > 0.0f && spawnerTemplate.EndTime > 0.0f;
             if (SpawnerId != spawnerId)
             {
-                if (spawnerTemplate is { StartTime: > 0.0f, EndTime: > 0.0f } || CheckGameScheduleStatus())
+                if (hasDefinedTimeWindow || CheckGameScheduleStatus())
                 {
                     //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] имеет другой спавнер SpawnerId={spawnerId} с расписанием спавна.");
                     result = true;
                 }
             }
-            if (SpawnerId == spawnerId)
+            else // SpawnerId == spawnerId
             {
-                if (spawnerTemplate is { StartTime: > 0.0f, EndTime: > 0.0f } || CheckGameScheduleStatus())
+                if (hasDefinedTimeWindow || CheckGameScheduleStatus())
                 {
                     //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] имеет расписание спавна.");
                     return true;

@@ -1,4 +1,4 @@
-﻿using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
@@ -89,7 +89,7 @@ public class DoodadFuncRecoverItem : DoodadFuncTemplate
         if (addedItem && item != null && item._holdingContainer.ContainerType == SlotType.Equipment)
             character.BroadcastPacket(new SCUnitEquipmentsChangedPacket(character.ObjId, (byte)item.Slot, item), false);
 
-        if ((addedItem) && (owner != null))
+        if (addedItem && owner != null)
         {
             // remove the old reference
             owner.ItemId = 0;

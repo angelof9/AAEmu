@@ -3,11 +3,15 @@ using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
+using AAEmu.Game.Models.Game.Faction;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Templates;
+using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Effects;
+using AAEmu.Game.Models.Game.Team;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.Static;
+using AAEmu.Game.Models.StaticValues;
 
 namespace AAEmu.Game.Models.Game.Char;
 
@@ -22,10 +26,27 @@ public partial class Character
     {
         base.DoDie(killer, killReason);
 
-        if (killer is Character enemy && enemy.Faction.MotherId != Faction.MotherId)
-            enemy.HostileFactionKills++;
+        var relationState = killer.GetRelationStateTo(this);
+        if (killer is Character enemy)
+        {
+            if (relationState != RelationState.Friendly)
+            {
+                enemy.HostileFactionKills++;
+            }
+            else
+            {
+                // Generate evidence if needed
+                var killerOwner = killer.GetOwnerCharacter();
+                if (killerOwner != null)
+                {
+                    if (!AssaultedBy.Contains(killerOwner.Id))
+                        _ = CrimeManager.Instance.GenerateEvidenceFromKill(killer, this);
+                }
+            }
+        }
 
         DropTradePackToFloor();
+        ClearAllAggro();
     }
 
     /// <summary>
@@ -35,7 +56,7 @@ public partial class Character
     {
         // check trade packs to drop
         var item = Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlot.Backpack);
-        if ((item?.Template is BackpackTemplate { BackpackType: BackpackType.TradePack } backpackTemplate))
+        if (item?.Template is BackpackTemplate { BackpackType: BackpackType.TradePack } backpackTemplate)
         {
             // Find the linked doodad of this item's put down effect
             var backpackDoodadId = 0u;
@@ -80,13 +101,78 @@ public partial class Character
         }
     }
 
-    public void OnDisconnect(object sender, OnDisconnectArgs args)
+    public override void ClearAllAggro()
     {
-        ForceDismount();
-        ParentWorld.MateManager.RemoveAndDespawnAllActiveOwnedMates(this);
+        base.ClearAllAggro();
+        AggroTable.Clear();
+        ClearAssaultList();
     }
 
-    public void OnEnterCombat(object sender, OnCombatStartedArgs args)
+    public void ClearAssaultList()
     {
+        foreach (var criminalPlayerId in AssaultedBy)
+        {
+            var criminal = WorldManager.Instance.GetCharacterById(criminalPlayerId);
+            if (criminal == null)
+                continue;
+            criminal.AssaultOn.Remove(this.Id);
+        }
+        foreach (var victimPlayerId in AssaultOn)
+        {
+            var victim = WorldManager.Instance.GetCharacterById(victimPlayerId);
+            if (victim == null)
+                continue;
+            victim.AssaultedBy.Remove(this.Id);
+        }
+        AssaultedBy.Clear();
+        AssaultOn.Clear();
+    }
+
+    /// <summary>
+    /// Checks if Wanted and/or pirate buffs need to be applied.
+    /// </summary>
+    public void CheckWantedThreshold()
+    {
+        // Check wanted status
+        if (CrimeRecord >= CrimeManager.PirateCrimePointThreshold)
+        {
+            // Add wanted
+            if (!Buffs.CheckBuff((uint)BuffConstants.Wanted))
+            {
+                Buffs.AddBuff((uint)BuffConstants.Wanted, this);
+            }
+            if (!Buffs.CheckBuff((uint)BuffConstants.Contemptuous))
+            {
+                Buffs.AddBuff((uint)BuffConstants.Contemptuous, this);
+            }
+            // Set pirate faction
+            if (Faction.Id != FactionsEnum.Pirate)
+            {
+                SetFaction(FactionsEnum.Pirate);
+                if (Expedition != null && Expedition.MotherId != FactionsEnum.Pirate)
+                {
+                    ExpeditionManager.Instance.Kick(this.Connection, this.Id);
+                }
+                if (InParty)
+                {
+                    TeamManager.Instance.MemberRemoveFromTeam(this, this, RiskyAction.Kick);
+                }
+            }
+        }
+        else
+        if (CrimePoint >= CrimeManager.WantedCrimePointThreshold)
+        {
+            if (!Buffs.CheckBuff((uint)BuffConstants.Wanted))
+            {
+                Buffs.AddBuff((uint)BuffConstants.Wanted, this);
+            }
+        }
+        else
+        {
+            if (Buffs.CheckBuff((uint)BuffConstants.Wanted))
+            {
+                Buffs.RemoveBuff((uint)BuffConstants.Wanted);
+            }
+        }
     }
 }

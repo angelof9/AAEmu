@@ -10,7 +10,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers.World;
 
-public class ZoneManager : Singleton<ZoneManager>
+public class ZoneManager(IWorldManager worldManager) : Singleton<ZoneManager>, IZoneManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
@@ -74,14 +74,14 @@ public class ZoneManager : Singleton<ZoneManager>
                 {
                     while (reader.Read())
                     {
-                        var template = new Zone();
-                        template.Id = reader.GetUInt32("id");
-                        template.Name = (string)reader.GetValue("name");
-                        template.ZoneKey = reader.GetUInt32("zone_key");
-                        template.GroupId = reader.GetUInt32("group_id", 0);
-                        template.Closed = reader.GetBoolean("closed", true);
-                        template.FactionId = (FactionsEnum)reader.GetUInt32("faction_id", 0);
-                        template.ZoneClimateId = reader.GetUInt32("zone_climate_id", 0);
+                        var template = new Zone
+                        {
+                            Id = reader.GetUInt32("id"), Name = (string)reader.GetValue("name"), ZoneKey = reader.GetUInt32("zone_key"),
+                            GroupId = reader.GetUInt32("group_id", 0),
+                            Closed = reader.GetBoolean("closed", true),
+                            FactionId = (FactionsEnum)reader.GetUInt32("faction_id", 0),
+                            ZoneClimateId = reader.GetUInt32("zone_climate_id", 0)
+                        };
                         _zoneIdToKey.Add(template.Id, template.ZoneKey);
                         _zones.Add(template.ZoneKey, template);
                     }
@@ -98,20 +98,20 @@ public class ZoneManager : Singleton<ZoneManager>
                 {
                     while (reader.Read())
                     {
-                        var template = new ZoneGroup();
-                        template.Id = reader.GetUInt32("id");
-                        template.Name = (string)reader.GetValue("name");
-                        template.X = reader.GetFloat("x");
-                        template.Y = reader.GetFloat("y");
-                        template.Width = reader.GetFloat("w");
-                        template.Hight = reader.GetFloat("h");
-                        template.TargetId = reader.GetUInt32("target_id");
-                        template.FactionChatRegionId = reader.GetUInt32("faction_chat_region_id");
-                        template.PirateDesperado = reader.GetBoolean("pirate_desperado", true);
-                        template.FishingSeaLootPackId = reader.GetUInt32("fishing_sea_loot_pack_id", 0);
-                        template.FishingLandLootPackId = reader.GetUInt32("fishing_land_loot_pack_id", 0);
-                        // 1.2 added BuffId
-                        template.BuffId = reader.GetUInt32("buff_id", 0);
+                        var template = new ZoneGroup
+                        {
+                            Id = reader.GetUInt32("id"), Name = (string)reader.GetValue("name"), X = reader.GetFloat("x"),
+                            Y = reader.GetFloat("y"),
+                            Width = reader.GetFloat("w"),
+                            Hight = reader.GetFloat("h"),
+                            TargetId = reader.GetUInt32("target_id"),
+                            FactionChatRegionId = reader.GetUInt32("faction_chat_region_id"),
+                            PirateDesperado = reader.GetBoolean("pirate_desperado", true),
+                            FishingSeaLootPackId = reader.GetUInt32("fishing_sea_loot_pack_id", 0),
+                            FishingLandLootPackId = reader.GetUInt32("fishing_land_loot_pack_id", 0),
+                            // 1.2 added BuffId
+                            BuffId = reader.GetUInt32("buff_id", 0)
+                        };
                         _groups.Add(template.Id, template);
                     }
                 }
@@ -130,8 +130,7 @@ public class ZoneManager : Singleton<ZoneManager>
                         var zoneGroupId = reader.GetUInt16("zone_group_id");
                         if (_groups.ContainsKey(zoneGroupId))
                         {
-                            var template = new ZoneConflict(_groups[zoneGroupId]);
-                            template.ZoneGroupId = zoneGroupId;
+                            var template = new ZoneConflict(_groups[zoneGroupId]) { ZoneGroupId = zoneGroupId };
 
                             for (var i = 0; i < 5; i++)
                             {
@@ -172,10 +171,12 @@ public class ZoneManager : Singleton<ZoneManager>
                 {
                     while (reader.Read())
                     {
-                        var template = new ZoneGroupBannedTag();
-                        template.Id = reader.GetUInt32("id");
-                        template.ZoneGroupId = reader.GetUInt32("zone_group_id");
-                        template.TagId = reader.GetUInt32("tag_id");
+                        var template = new ZoneGroupBannedTag
+                        {
+                            Id = reader.GetUInt32("id"),
+                            ZoneGroupId = reader.GetUInt32("zone_group_id"),
+                            TagId = reader.GetUInt32("tag_id")
+                        };
                         // TODO 1.2 // template.BannedPeriodsId = reader.GetUInt32("banned_periods_id");
                         _groupBannedTags.Add(template.Id, template);
                     }
@@ -191,10 +192,12 @@ public class ZoneManager : Singleton<ZoneManager>
                 {
                     while (reader.Read())
                     {
-                        var template = new ZoneClimateElem();
-                        template.Id = reader.GetUInt32("id");
-                        template.ZoneClimateId = reader.GetUInt32("zone_climate_id");
-                        template.ClimateId = (Climate)reader.GetUInt32("climate_id");
+                        var template = new ZoneClimateElem
+                        {
+                            Id = reader.GetUInt32("id"),
+                            ZoneClimateId = reader.GetUInt32("zone_climate_id"),
+                            ClimateId = (Climate)reader.GetUInt32("climate_id")
+                        };
                         _climateElem.Add(template.Id, template);
                     }
                 }
@@ -204,9 +207,9 @@ public class ZoneManager : Singleton<ZoneManager>
         }
     }
 
-    public static Vector2 GetZoneOriginCell(uint zoneId)
+    public Vector2 GetZoneOriginCell(uint zoneId)
     {
-        var world = WorldManager.Instance.GetWorldTemplateByZoneKey(zoneId);
+        var world = worldManager.GetWorldTemplateByZoneKey(zoneId);
         if (world?.XmlWorldZones.TryGetValue(zoneId, out var xmlZone) ?? false)
         {
             return new Vector2(xmlZone.OriginX, xmlZone.OriginY);
@@ -220,7 +223,7 @@ public class ZoneManager : Singleton<ZoneManager>
     /// <param name="zoneId">zoneKey</param>
     /// <param name="point">offset inside the zone</param>
     /// <returns></returns>
-    public static Vector3 ConvertToWorldCoordinates(uint zoneId, Vector3 point)
+    public Vector3 ConvertToWorldCoordinates(uint zoneId, Vector3 point)
     {
         var origin = GetZoneOriginCell(zoneId);
 
@@ -246,7 +249,7 @@ public class ZoneManager : Singleton<ZoneManager>
     /// </summary>
     /// <param name="doodad"></param>
     /// <returns>Returns true if the doodad can have a growth time bonus, false if out of climate, or no climate defined for the doodad</returns>
-    public static bool DoodadHasMatchingClimate(Doodad doodad)
+    public bool DoodadHasMatchingClimate(Doodad doodad)
     {
         // If no climate defined, then don't give a bonus
         if (doodad.Template.ClimateId == Climate.Any || doodad.Template.ClimateId == Climate.Any)
@@ -256,13 +259,13 @@ public class ZoneManager : Singleton<ZoneManager>
         if (doodad.Transform.ZoneId <= 0)
         {
             // If ZoneId wasn't set yet, calculate it
-            var zoneId = WorldManager.Instance.GetZoneId(doodad.ParentWorld.Template, doodad.Transform.World.Position.X, doodad.Transform.World.Position.Y);
+            var zoneId = worldManager.GetZoneId(doodad.ParentWorld.Template, doodad.Transform.World.Position.X, doodad.Transform.World.Position.Y);
             doodad.Transform.ZoneId = zoneId;
         }
-        var zone = ZoneManager.Instance.GetZoneByKey(doodad.Transform.ZoneId);
+        var zone = GetZoneByKey(doodad.Transform.ZoneId);
 
         // Get the climates list for this zone
-        var zoneClimates = ZoneManager.Instance.GetClimatesByZone(zone);
+        var zoneClimates = GetClimatesByZone(zone);
 
         // Check if it's in there
         return zoneClimates.Contains(doodad.Template.ClimateId);

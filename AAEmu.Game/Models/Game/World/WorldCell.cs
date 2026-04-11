@@ -16,7 +16,7 @@ public class WorldCell
     public int CellX { get; init; }
     public int CellY { get; init; }
     public bool Loaded { get; private set; }
-    private bool Loading { get; set; }
+    private readonly Lock _loadLock = new();
     private Vector3 CellOffset { get; set; }
     internal ushort[,] HeightMap { get; private set; }
     private float MinHeight { get; set; }
@@ -90,13 +90,14 @@ public class WorldCell
         {
             for (var x = 0; x < 4; x++)
             {
-                var pathX = (uint)((CellX * 4) + x);
-                var pathY = (uint)((CellY * 4) + y);
+                var pathX = (uint)(CellX * 4 + x);
+                var pathY = (uint)(CellY * 4 + y);
                 var pathFolder = $"{pathX:000}_{pathY:000}";
                 var pathBaiLoader = new BaseBaiLoader(Template);
                 pathBaiLoader.LoadBaiFilesFromFolder(pathFolder); // (x != 0 || y != 0)
                 BaiLoader[x, y] = pathBaiLoader;
-                Template.PathBaiLoader.Add((pathX, pathY), pathBaiLoader);
+                if (!Template.PathBaiLoader.TryAdd((pathX, pathY), pathBaiLoader))
+                    Logger.Warn($"PathBaiLoader already contains key ({pathX}, {pathY}) for template {Template.Name}");
             }
         }
     }
@@ -110,15 +111,14 @@ public class WorldCell
         if (Loaded)
             return this;
 
-        if (!Loading)
+        lock (_loadLock)
         {
-            Loading = true;
-            // Assign heightmap array
+            if (Loaded)
+                return this;
+
             HeightMap = new ushort[WorldManager.CELL_HMAP_RESOLUTION, WorldManager.CELL_HMAP_RESOLUTION];
-            // Load data
             LoadBaiFiles();
             Loaded = LoadCellHeightMapFromClientData();
-            Loading = false;
         }
         return this;
     }

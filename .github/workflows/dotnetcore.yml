@@ -13,23 +13,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
       - name: Install dependencies
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
-      # - name: Scripts Compile Net 8
-      #    run: dotnet run --project AAEmu.Game/AAEmu.Game.csproj --framework net8.0 compiler-check
-      - name: Scripts Compile Net 9
-        run: dotnet run --project AAEmu.Game/AAEmu.Game.csproj --framework net9.0 compiler-check
+      - name: Scripts Compile
+        run: dotnet run --configuration Release --no-build --project AAEmu.Game/AAEmu.Game.csproj compiler-check
       - name: Test
-        run: dotnet test --filter FullyQualifiedName!~AAEmu.IntegrationTests /p:CollectCoverage=true /p:CoverletOutput=TestResults/ /p:CoverletOutputFormat=lcov
+        run: dotnet test --project AAEmu.UnitTests --configuration Release --no-build --coverage --coverage-output coverage.cobertura.xml --coverage-output-format cobertura --results-directory ./TestResults
+      - name: Login Integration Tests
+        run: dotnet test --project AAEmu.Login.IntegrationTests --configuration Release --no-build
       - name: Coveralls GitHub Action
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: ./AAEmu.UnitTests/TestResults/coverage.info
+          file: ./TestResults/coverage.cobertura.xml

@@ -7,7 +7,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class FishSchoolManager : Singleton<FishSchoolManager>
+public class FishSchoolManager : Singleton<FishSchoolManager>, IFishSchoolManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     /// <summary>
@@ -31,7 +31,7 @@ public class FishSchoolManager : Singleton<FishSchoolManager>
             foreach (var d in doodads)
             {
                 // ID=6447, "Freshwater Fish School", ID=6448, "Saltwater Fish School"
-                if ((d.TemplateId == DoodadConstants.FreshwaterFishSchool) || (d.TemplateId == DoodadConstants.SaltwaterFishSchool))
+                if (d.TemplateId == DoodadConstants.FreshwaterFishSchool || d.TemplateId == DoodadConstants.SaltwaterFishSchool)
                     fishSchool.Add(d);
             }
 

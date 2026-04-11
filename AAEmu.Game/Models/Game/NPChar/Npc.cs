@@ -1,12 +1,9 @@
-﻿using System.Collections;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
-using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.AI.v2.Behaviors.Common;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
 using AAEmu.Game.Models.Game.Char;
@@ -65,7 +62,6 @@ public partial class Npc : Unit
     public override byte RaceGender => (byte)(16 * Template.Gender + Template.Race);
 
     public NpcAi Ai { get; set; } // New framework
-    public ConcurrentDictionary<uint, Aggro> AggroTable { get; }
 
     public BaseUnit CurrentAggroTarget
     {
@@ -84,11 +80,6 @@ public partial class Npc : Unit
     }
 
     public bool CanFly { get; set; } // TODO: mark NPCs that can fly so that they don't land on the ground when calculating the Z height
-
-    /// <summary>
-    /// Tagging works differently to Aggro and has its own system 
-    /// </summary>
-    public Tagging CharacterTagging { get; set; }
 
     public override float BaseMoveSpeed
     {
@@ -595,7 +586,7 @@ public partial class Npc : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.MeleeDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -671,7 +662,7 @@ public partial class Npc : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.RangedDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -727,7 +718,7 @@ public partial class Npc : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.SpellDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -839,8 +830,6 @@ public partial class Npc : Unit
     public Npc()
     {
         Name = "";
-        AggroTable = new ConcurrentDictionary<uint, Aggro>();
-        CharacterTagging = new Tagging(this);//Adding because Tagging works differently than Aggro
         //Equip = new Item[28];
     }
 
@@ -884,7 +873,7 @@ public partial class Npc : Unit
             QuestManager.Instance.DoOnMonsterHuntEvents(characterKiller, this); // No eligible owner, but the killer is a character.
             characterKiller.AddExp(KillExp, true);
             var mateList = characterKiller.ParentWorld.MateManager.GetActiveMates(characterKiller.Id);
-            foreach(var mate in mateList)
+            foreach (var mate in mateList)
             {
                 mate.AddExp(KillExp);
                 // TODO: Proper message?
@@ -966,20 +955,20 @@ public partial class Npc : Unit
                     if (levelDifference > 0)
                     {
                         // pl.Level is above this.Level
-                        levDif = 1.0f - (0.1f * levelDifference);
+                        levDif = 1.0f - 0.1f * levelDifference;
                     }
                     else if (levelDifference < 0)
                     {
                         // pl.Level is below this.Level
-                        levDif = 1.0f + (0.1f * -levelDifference);
+                        levDif = 1.0f + 0.1f * -levelDifference;
                     }
 
-                    var plKillXp = (int)((KillExp * plMod) * levDif);
-                    var mateKillXp = (int)((KillExp * mateMod) * levDif);
+                    var plKillXp = (int)(KillExp * plMod * levDif);
+                    var mateKillXp = (int)(KillExp * mateMod * levDif);
 
                     pl.AddExp(plKillXp, true);
                     var mateList = pl.ParentWorld.MateManager.GetActiveMates(pl.Id);
-                    foreach(var mate in mateList)
+                    foreach (var mate in mateList)
                     {
                         mate.AddExp(mateKillXp);
                         // TODO: Proper message?
@@ -1043,113 +1032,9 @@ public partial class Npc : Unit
         character.SendPacket(new SCUnitsRemovedPacket([ObjId]));
     }
 
-    public void AddUnitAggro(AggroKind kind, Unit unit, int amount)
-    {
-        //var player = unit as Character; // TODO player.Region становится равным null | player.Region becomes null
-        var player = unit as Character;
-        // Character player = null;
-        // if (unit is not Npc and not Units.Mate and not Slave)
-        // {
-        //     player = (Character)unit;
-        // }
-        // player?.SendMessage(ChatType.System, $"AddUnitAggro {player.Name} + {amount} for {this.ObjId}");
-
-        // check self buff tags
-        if (Buffs.CheckBuffTag((uint)TagsEnum.NoFight) || Buffs.CheckBuffTag((uint)TagsEnum.Returning))
-        {
-            ClearAggroOfUnit(unit);
-            return;
-        }
-
-        // check target buff tags
-        if ((unit.Buffs?.CheckBuffTag((uint)TagsEnum.NoFight) ?? false) || (unit.Buffs?.CheckBuffTag((uint)TagsEnum.Returning) ?? false))
-        {
-            ClearAggroOfUnit(unit);
-            return;
-        }
-
-        //Add Tagging if it was damage aggro
-        if (kind == AggroKind.Damage)
-            CharacterTagging.AddTagger(unit, amount);
-
-        amount = (int)(amount * (unit.AggroMul / 100.0f));
-        amount = (int)(amount * (IncomingAggroMul / 100.0f));
-
-        if (AggroTable.TryGetValue(unit.ObjId, out var aggro))
-        {
-            aggro.AddAggro(kind, amount);
-        }
-        else
-        {
-            aggro = new Aggro(unit);
-            aggro.AddAggro(kind, amount);
-            if (AggroTable.TryAdd(unit.ObjId, aggro))
-            {
-                unit.Events.OnHealed += OnAbuserHealed;
-                unit.Events.OnDeath += OnAbuserDied;
-            }
-
-            // TODO: make this party/raid wide? Take into account pets/slaves?
-            // If there is a quest starter attached to this NPC, start it when unit gets added for the first time
-            // to the aggro list
-            if ((Template.EngageCombatGiveQuestId > 0) && player is not null)
-            {
-                if (!player.Quests.IsQuestComplete(Template.EngageCombatGiveQuestId) && !player.Quests.HasQuest(Template.EngageCombatGiveQuestId))
-                    player.Quests.AddQuest(Template.EngageCombatGiveQuestId);
-            }
-
-            // Send initial hit packet as well
-            unit.SendPacketToPlayers([this, unit], new SCCombatFirstHitPacket(this.ObjId, unit.ObjId, 0));
-        }
-
-        if (player == null)
-            return;
-
-        if (aggro.TotalAggro > 0 && !IsDead && Hp > 0 && !player.IsInAggroListOf.ContainsKey(this.ObjId))
-        {
-            player.IsInAggroListOf.Add(this.ObjId, this);
-        }
-        //player?.Quests.OnAggro(this);
-        // инициируем событие
-        //Task.Run(() => QuestManager.Instance.DoOnAggroEvents(player, this));
-        QuestManager.Instance.DoOnAggroEvents(player, this);
-    }
-
-    public void ClearAggroOfUnit(Unit unit)
-    {
-        if (unit is null)
-            return;
-
-        if (unit is Character player)
-        {
-            player.IsInAggroListOf.Remove(ObjId);
-        }
-
-        // var player = unit as Character;
-        // player?.SendMessage($"ClearAggroOfUnit {player.Name} for {this.ObjId}");
-
-        var lastAggroCount = AggroTable.Count;
-        if (lastAggroCount <= 0)
-        {
-            return;
-        }
-        if (AggroTable.TryRemove(unit.ObjId, out _))
-        {
-            unit.Events.OnHealed -= OnAbuserHealed;
-            unit.Events.OnDeath -= OnAbuserDied;
-        }
-        else
-        {
-            Logger.Warn($"Failed to remove unit[{unit.ObjId}] aggro from NPC[{ObjId}]");
-        }
-
-        if (AggroTable.Count != lastAggroCount)
-            CheckIfEmptyAggroToReturn(unit);
-    }
-
     //Tagging!
 
-    private static void CheckIfEmptyAggroToReturn(IBaseUnit unit)
+    public void CheckIfEmptyAggroToReturn(IBaseUnit unit)
     {
         if (unit is not Npc npc)
             return;
@@ -1184,35 +1069,14 @@ public partial class Npc : Unit
         }
     }
 
-    public void ClearAllAggro()
+    public override void ClearAllAggro()
     {
-        // Adding for tagging
-        CharacterTagging.ClearAllTaggers();
-
-        foreach (var table in AggroTable)
-        {
-            var unit = table.Value.Owner?.ParentWorld.GetUnit(table.Key);
-            if (unit != null)
-            {
-                unit.Events.OnHealed -= OnAbuserHealed;
-                unit.Events.OnDeath -= OnAbuserDied;
-            }
-        }
+        base.ClearAllAggro();
 
         var lastAggroCount = AggroTable.Count;
         ClearAllAggroTargetsAndCheckCombatState();
         if (lastAggroCount > 0)
             CheckIfEmptyAggroToReturn();
-    }
-
-    public void OnAbuserHealed(object sender, OnHealedArgs args)
-    {
-        AddUnitAggro(AggroKind.Heal, args.Healer, args.HealAmount);
-    }
-
-    public void OnAbuserDied(object sender, OnDeathArgs args)
-    {
-        ClearAggroOfUnit(args.Victim);
     }
 
     public void OnDamageReceived(Unit attacker, int amount)
@@ -1327,9 +1191,9 @@ public partial class Npc : Unit
 
     public void LookTowards(Vector3 other, byte flags = 4)
     {
-        var oldPosition = Transform.Local.ClonePosition();
-        oldPosition.Z = WorldManager.Instance.GetReferenceHeight(Ai, oldPosition.X, oldPosition.Y, oldPosition.Z, Transform.ZoneId);
-        Transform.Local.SetPosition(oldPosition);
+        //var oldPosition = Transform.Local.ClonePosition();
+        //oldPosition.Z = WorldManager.Instance.GetReferenceHeight(Ai, oldPosition.X, oldPosition.Y, oldPosition.Z, Transform.ZoneId);
+        //Transform.Local.SetPosition(oldPosition);
 
         var moveType = (UnitMoveType)MoveType.GetType(MoveTypeEnum.Unit);
 
@@ -1360,16 +1224,16 @@ public partial class Npc : Unit
         moveType.Alertness = CurrentAlertness;
         moveType.Time = (uint)(DateTime.UtcNow - DateTime.UtcNow.Date).TotalMilliseconds;
 
-        CheckMovedPosition(oldPosition);
+        //CheckMovedPosition(oldPosition);
         //SetPosition(Position);
         BroadcastPacket(new SCOneUnitMovementPacket(ObjId, moveType), false);
     }
 
     public void StopMovement()
     {
-        var oldPosition = Transform.Local.ClonePosition();
-        oldPosition.Z = WorldManager.Instance.GetReferenceHeight(Ai, oldPosition.X, oldPosition.Y, oldPosition.Z, Transform.ZoneId);
-        Transform.Local.SetPosition(oldPosition);
+        //var oldPosition = Transform.Local.ClonePosition();
+        //oldPosition.Z = WorldManager.Instance.GetReferenceHeight(Ai, oldPosition.X, oldPosition.Y, oldPosition.Z, Transform.ZoneId);
+        //Transform.Local.SetPosition(oldPosition);
 
         var moveType = (UnitMoveType)MoveType.GetType(MoveTypeEnum.Unit);
         moveType.X = Transform.Local.Position.X;
@@ -1481,14 +1345,15 @@ public partial class Npc : Unit
         // Passive Buffs
         foreach (var npcPassiveBuff in Template.PassiveBuffs)
         {
-            var passive = new PassiveBuff() { Template = npcPassiveBuff.PassiveBuff };
+            var passive = new PassiveBuff { Template = npcPassiveBuff.PassiveBuff };
             passive.Apply(this);
         }
 
         // Stat bonus effects
         foreach (var bonusTemplate in Template.Bonuses)
         {
-            var bonus = new Bonus {
+            var bonus = new Bonus
+            {
                 Template = bonusTemplate,
                 Value = bonusTemplate.Value // TODO using LinearLevelBonus
             };
@@ -1507,5 +1372,13 @@ public partial class Npc : Unit
         }
 
         base.Delete();
+    }
+
+    public override Character GetOwnerCharacter()
+    {
+        // Not sure if this needs to be implemented for escort NPCs
+        // if (OwnerId > 0)
+        //     return WorldManager.Instance.GetCharacterById(OwnerId)?.GetOwnerCharacter();
+        return null;
     }
 }

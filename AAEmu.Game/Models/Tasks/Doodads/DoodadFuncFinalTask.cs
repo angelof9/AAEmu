@@ -11,12 +11,12 @@ namespace AAEmu.Game.Models.Tasks.Doodads;
 public class DoodadFuncFinalTask : DoodadFuncTask
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
-    private BaseUnit _caster;
-    private Doodad _owner;
-    private uint _skillId;
+    private readonly BaseUnit _caster;
+    private readonly Doodad _owner;
+    private readonly uint _skillId;
     // Unused private int _nextPhase;
-    private bool _respawn;
-    private int _delay;
+    private readonly bool _respawn;
+    private readonly int _delay;
     private DateTime? _respawnTime;
 
     public DoodadFuncFinalTask(BaseUnit caster, Doodad owner, uint skillId, bool respawn, int delay) : base(caster, owner, skillId)
@@ -49,7 +49,7 @@ public class DoodadFuncFinalTask : DoodadFuncTask
 
             var world = WorldManager.Instance.GetWorld(_owner.Transform.InstanceId);
             //_owner.Spawner.DecreaseCount(_owner);
-            _owner.Spawner.Position.WorldId = world.Id;
+            _owner.Spawner.Position.WorldId = world?.Id ?? WorldManager.DefaultInstanceId;
             _owner.Spawner.Spawn(0);
         }
         else

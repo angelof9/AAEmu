@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Quests.Acts;
@@ -172,7 +171,7 @@ public partial class QuestManager
         if (npc == null)
             return;
 
-        var npcZoneGroupId = ZoneManager.Instance.GetZoneByKey(npc.Transform.ZoneId)?.GroupId ?? 0;
+        var npcZoneGroupId = zoneManager.GetZoneByKey(npc.Transform.ZoneId)?.GroupId ?? 0;
 
         // Individual monster kill
         owner.Events?.OnMonsterHunt(owner, new OnMonsterHuntArgs
@@ -262,8 +261,8 @@ public partial class QuestManager
         if (levelActs != null)
             foreach (var levelAct in levelActs)
             {
-                if ((levelAct is QuestActConAcceptLevelUp actLevelUp) && // correct Template
-                    (owner.Level >= actLevelUp.Level) && // Minimum Level
+                if (levelAct is QuestActConAcceptLevelUp actLevelUp && // correct Template
+                    owner.Level >= actLevelUp.Level && // Minimum Level
                     !owner.Quests.HasQuestCompleted(actLevelUp.ParentQuestTemplate.Id) && // NEver completed before
                     !owner.Quests.HasQuest(actLevelUp.ParentQuestTemplate.Id)) // Not active
                 {
@@ -332,7 +331,7 @@ public partial class QuestManager
     /// <param name="questId"></param>
     public void OnTimerExpired(ICharacter owner, uint questId)
     {
-        owner?.Events?.OnTimerExpired(owner, new OnTimerExpiredArgs() { QuestId = questId });
+        owner?.Events?.OnTimerExpired(owner, new OnTimerExpiredArgs { QuestId = questId });
     }
 
     /// <summary>

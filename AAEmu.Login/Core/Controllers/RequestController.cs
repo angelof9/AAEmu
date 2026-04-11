@@ -3,7 +3,8 @@ using AAEmu.Login.Utils;
 
 namespace AAEmu.Login.Core.Controllers;
 
-public class RequestController() : IdManager("RequestController", firstId, lastId, objTables, exclude), IRequestController
+public class RequestController(ILogger<RequestController> logger)
+    : IdManager("RequestController", firstId, lastId, objTables, exclude, logger), IRequestController
 {
     private const uint firstId = 0x00000001;
     private const uint lastId = 0x00FFFFFF;

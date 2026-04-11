@@ -1,12 +1,9 @@
-﻿using AAEmu.Commons.Utils.DB;
-using AAEmu.Commons.Utils.Updater;
+﻿using AAEmu.Commons.Utils.Updater;
 using AAEmu.Login.Core.Controllers;
 using AAEmu.Login.Core.Network.Internal;
-using AAEmu.Login.Core.Network.Login;
 using AAEmu.Login.Models;
-using Microsoft.Extensions.Hosting;
+using AAEmu.Login.Utils;
 using Microsoft.Extensions.Options;
-using NLog;
 
 namespace AAEmu.Login;
 
@@ -14,44 +11,41 @@ public sealed class LoginService(
     IGameController gameController,
     IRequestController requestController,
     IInternalNetwork internalNetwork,
-    ILoginNetwork loginNetwork,
-    IOptions<AppConfiguration> appConfig) : IHostedService, IDisposable
+    IMySqlConnectionFactory connectionFactory,
+    IOptions<DBConnectionsConfig> dbConnectionsConfig,
+    ILogger<LoginService> logger) : IHostedService, IDisposable
 {
-    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
-
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        Logger.Info("Starting daemon: AAEmu.Login");
+        logger.LogInformation("Starting daemon: AAEmu.Login");
+
         // Check for updates
-        using (var connection = MySQL.CreateConnection())
+        await using (var connection = connectionFactory.CreateConnection())
         {
             if (!MySqlDatabaseUpdater.Run(connection, "aaemu_login",
-                    appConfig.Value.Connections.MySQLProvider.Database))
+                    dbConnectionsConfig.Value.MySQLProvider.Database,
+                    dbConnectionsConfig.Value.AutoApplyUpdates))
             {
-                Logger.Fatal("Failed up update database !");
-                Logger.Fatal("Press Ctrl+C to quit");
-                return Task.CompletedTask;
+                logger.LogCritical("Failed to update database!");
+                logger.LogCritical("Press Ctrl+C to quit");
+                return;
             }
         }
 
         requestController.Initialize();
         gameController.Load();
-        loginNetwork.Start();
         internalNetwork.Start();
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        Logger.Info("Stopping daemon.");
-        loginNetwork.Stop();
+        logger.LogInformation("Stopping daemon.");
         internalNetwork.Stop();
         return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        Logger.Info("Disposing....");
-        LogManager.Flush();
+        logger.LogInformation("Disposing...");
     }
 }

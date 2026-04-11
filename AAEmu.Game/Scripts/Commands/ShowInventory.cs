@@ -64,7 +64,7 @@ public class ShowInventory : ICommand
             var firstarg = 0;
             if (args.Length > 0)
             {
-                targetPlayer = WorldManager.GetTargetOrSelf(character, args[0], out firstarg);
+                targetPlayer = WorldManager.Instance.GetTargetOrSelf(character, args[0], out firstarg);
             }
 
             var containerId = SlotType.Inventory;
@@ -150,7 +150,7 @@ public class ShowInventory : ICommand
                         foreach (var invalidItem in invalidItems)
                         {
                             var nextSlot = targetContainer.Owner.Inventory.Bag.GetUnusedSlot(-1);
-                            if ((nextSlot < 0) || !targetContainer.Owner.Inventory.Bag.AddOrMoveExistingItem(ItemTaskType.Invalid, invalidItem))
+                            if (nextSlot < 0 || !targetContainer.Owner.Inventory.Bag.AddOrMoveExistingItem(ItemTaskType.Invalid, invalidItem))
                             {
                                 CommandManager.SendErrorText(this, messageOutput, $"Unable to fix {invalidItem.TemplateId} ({invalidItem.TemplateId}) ItemId: {invalidItem.Id}, no more room in your inventory to move this item!");
                                 continue;

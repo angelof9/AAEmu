@@ -1,21 +1,21 @@
 ﻿using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using AAEmu.Commons.Utils.DB;
 using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Network.Internal;
-using AAEmu.Login.Core.Packets.L2C;
 using AAEmu.Login.Core.Packets.L2G;
 using AAEmu.Login.Models;
 using Microsoft.Extensions.Options;
-using NLog;
 
 namespace AAEmu.Login.Core.Controllers;
 
-public class GameController(IRequestController requestController, IOptions<AppConfiguration> appConfig)
+public class GameController(
+    IRequestController requestController,
+    ILoginConnectionTable connectionTable,
+    IOptions<AppConfiguration> appConfig,
+    ILogger<GameController> logger)
     : IGameController
 {
-    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private readonly ConcurrentDictionary<GameServerId, GameServer> _gameServers = [];
     private readonly Dictionary<GameServerId, GameServerId> _mirrorsId = [];
 
@@ -27,7 +27,7 @@ public class GameController(IRequestController requestController, IOptions<AppCo
         connection.SendPacket(message);
     }
 
-    private static string ResolveHostName(string host)
+    private string ResolveHostName(string host)
     {
         try
         {
@@ -36,60 +36,56 @@ public class GameController(IRequestController requestController, IOptions<AppCo
                 parsedHost.AddressList.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
             if (firstIPv4Address != null)
             {
-                Logger.Debug($"Resolved {host} to {firstIPv4Address}");
+                logger.LogDebug("Resolved {Host} to {Address}", host, firstIPv4Address);
                 return firstIPv4Address.ToString();
             }
 
-            Logger.Warn($"Unable to resolved {host}");
+            logger.LogWarning("Unable to resolve {Host} to an IPv4 address", host);
             return host;
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
             // in case of errors, just return it un-parsed
-            Logger.Error(e, $"Exception resolving {host}: {e.Message}");
+            logger.LogError(ex, "Exception resolving {Host}", host);
             return host;
         }
     }
 
     public void Load()
     {
-        using var connection = MySQL.CreateConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM game_servers WHERE hidden = 0";
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var gameServerConfig in appConfig.Value.GameServers.Where(gs => !gs.Hidden))
         {
-            var id = new GameServerId(reader.GetByte("id"));
-            var name = reader.GetString("name");
-            var loadedHost = reader.GetString("host");
-            var host = appConfig.Value.SkipHostResolve ? loadedHost : ResolveHostName(loadedHost);
-            var port = reader.GetUInt16("port");
-            var gameServer = new GameServer(id, name, host, port);
+            var id = new GameServerId(gameServerConfig.Id);
+            var host = appConfig.Value.SkipHostResolve ? gameServerConfig.Host : ResolveHostName(gameServerConfig.Host);
+            var gameServer = new GameServer(id, gameServerConfig.Name, host, gameServerConfig.Port);
             if (!_gameServers.TryAdd(gameServer.Id, gameServer))
             {
-                Logger.Error("Game Server {id} ({name}) already exists in the game_servers table!", gameServer.Id.Value,
+                logger.LogError("Game server {ID} ({Name}) has been defined more than once!",
+                    gameServer.Id.Value,
                     gameServer.Name);
             }
 
-            var extraInfo = host != loadedHost ? "from " + loadedHost :
+            var extraInfo = host != gameServerConfig.Host ? "from " + gameServerConfig.Host :
                 appConfig.Value.SkipHostResolve ? " (unresolved)" : "";
-            Logger.Info($"Game Server {id.Value}: {name} -> {host}:{port} {extraInfo}");
+            logger.LogInformation("Game Server {ID}: {Name} -> {Host}:{Port} {ExtraInfo}", id.Value,
+                gameServerConfig.Name, host, gameServerConfig.Port, extraInfo);
         }
 
         if (_gameServers.IsEmpty)
         {
-            Logger.Fatal("No servers have been defined in the game_servers table!");
+            logger.LogCritical("No game servers have been defined!");
             return;
         }
 
-        Logger.Info($"Loaded {_gameServers.Count} game server(s)");
+        logger.LogInformation("Loaded {Count} game server(s)", _gameServers.Count);
     }
 
     public void Add(GameServerId gsId, List<GameServerId> mirrorsId, InternalConnection connection)
     {
         if (!_gameServers.TryGetValue(gsId, out var gameServer))
         {
-            Logger.Error($"GameServer connection from {connection.Ip} is requesting an invalid WorldId {gsId}");
+            logger.LogError("GameServer connection from {GameServerIP} is requesting an invalid WorldId {GsId}",
+                connection.Ip, gsId);
 
             Task.Run(() =>
                 SendPacketWithDelay(connection, 5000, new LGRegisterGameServerPacket(GSRegisterResult.Error)));
@@ -109,7 +105,8 @@ public class GameController(IRequestController requestController, IOptions<AppCo
             _mirrorsId.Add(mirrorId, gsId);
         }
 
-        Logger.Info($"Registered GameServer {gameServer.Id} ({gameServer.Name}) from {connection.Ip}");
+        logger.LogInformation("Registered GameServer {GameServerId} ({GameServerName}) from {ConnectionIP}",
+            gameServer.Id, gameServer.Name, connection.Ip);
     }
 
     public void Remove(GameServerId gsId)
@@ -129,7 +126,7 @@ public class GameController(IRequestController requestController, IOptions<AppCo
         gameServer.MirrorsId.Clear();
     }
 
-    public async Task RequestWorldListAsync(LoginConnection connection)
+    public async Task<WorldListResult> GetWorldListAsync(ILoginConnection connection)
     {
         var gameServers = _gameServers.Values.ToList();
         if (_gameServers.Values.Any(x => x.Active))
@@ -160,7 +157,7 @@ public class GameController(IRequestController requestController, IOptions<AppCo
             await creationTask;
         }
 
-        connection.SendPacket(new ACWorldListPacket(gameServers, connection.GetCharacters()));
+        return new WorldListResult(gameServers, connection.GetCharacters());
     }
 
     public void SetLoad(GameServerId gsId, byte load)
@@ -168,31 +165,34 @@ public class GameController(IRequestController requestController, IOptions<AppCo
         _gameServers[gsId].Load = (GSLoad)load;
     }
 
-    public void RequestEnterWorld(LoginConnection connection, GameServerId gsId)
+    public GameServer? GetGameServer(GameServerId gsId) => _gameServers.GetValueOrDefault(gsId);
+
+    public void RequestEnterWorld(AccountId accountId, ConnectionId connectionId, GameServerId gsId)
     {
         if (!_gameServers.TryGetValue(gsId, out var gs))
+        {
+            logger.LogWarning("RequestEnterWorld: game server {GsId} not found", gsId);
             return;
+        }
+
         if (!gs.Active)
+        {
+            logger.LogWarning("RequestEnterWorld: game server {GsId} not active", gsId);
             return;
-        gs.SendPacket(new LGPlayerEnterPacket(connection.AccountId, connection.Id));
+        }
+
+        gs.SendPacket(new LGPlayerEnterPacket(accountId, connectionId));
     }
 
-    public void EnterWorld(LoginConnection connection, GameServerId gsId, byte result)
+    public void RouteEnterWorldResponse(ConnectionId connectionId, GameServerId gsId, byte result)
     {
-        switch (result)
+        var connection = connectionTable.GetConnection(connectionId);
+        if (connection is null)
         {
-            case 0 when _gameServers.TryGetValue(gsId, out var server):
-                connection.SendPacket(new ACWorldCookiePacket(connection, server));
-                break;
-            case 0:
-                // TODO ...
-                break;
-            case 1:
-                connection.SendPacket(new ACEnterWorldDeniedPacket(0)); // TODO change reason
-                break;
-            default:
-                // TODO ...
-                break;
+            logger.LogWarning("RouteEnterWorldResponse: connection {ConnectionId} not found", connectionId);
+            return;
         }
+
+        connection.Session.CompleteEnterWorldRequest(gsId, result);
     }
 }

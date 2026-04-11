@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Xml;
@@ -7,6 +7,7 @@ using AAEmu.Commons.Exceptions;
 using AAEmu.Commons.IO;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers.Id;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.IO;
@@ -27,7 +28,12 @@ using NLog;
 namespace AAEmu.Game.Core.Managers.World;
 
 // ReSharper disable once ClassNeverInstantiated.Global
-public class WorldManager : Singleton<WorldManager>, IWorldManager
+public class WorldManager(
+    ITickManager tickManager,
+    IWorldIdManager worldIdManager,
+    Lazy<IZoneManager> zoneManager,
+    Lazy<IIndunManager> indunManager,
+    Lazy<IFamilyManager> familyManager) : Singleton<WorldManager>, IWorldManager
 {
     /// <summary>
     /// Default World and Instance ID that will be assigned to all Transforms as a Default value
@@ -62,7 +68,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <summary>
     /// List of loaded world instances (instanceId, WorldInstance)
     /// </summary>
-    private Dictionary<uint, WorldInstance> _worlds = [];
+    private ConcurrentDictionary<uint, WorldInstance> _worlds = new();
 
     /// <summary>
     /// WorldTemplateId by ZoneId list (zoneId, worldTemplateId)
@@ -243,7 +249,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         {
             foreach (var zoneKey in worldTemplate.ZoneKeys)
             {
-                var zone = ZoneManager.Instance.GetZoneByKey(zoneKey);
+                var zone = zoneManager.Value.GetZoneByKey(zoneKey);
                 if (zone.GroupId == zoneGroupId)
                     return worldTemplate;
             }
@@ -261,7 +267,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         if (_loaded)
             return;
 
-        _worlds = [];
+        _worlds = new();
         _worldIdByZoneKey = [];
         _worldInteractionGroups = [];
         _zoneKeysByWorldId = [];
@@ -350,11 +356,13 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         #endregion
 
         _loaded = true;
+
+        LoadHeightmaps();
     }
 
     public void Initialize()
     {
-        TickManager.Instance.OnTick.Subscribe(ActiveRegionTick, TimeSpan.FromSeconds(1));
+        tickManager.OnTick.Subscribe(ActiveRegionTick, TimeSpan.FromSeconds(1));
     }
 
     /// <summary>
@@ -376,7 +384,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         // Load initial instances according to config
         foreach (var dungeonLoadConfig in AppConfiguration.Instance.Dungeons.AutoCreate)
         {
-            _ = IndunManager.Instance.CreateSystemInstance(null, GetWorldTemplateByName(dungeonLoadConfig.Name).ZoneKeys.First(), dungeonLoadConfig.Channel, true, dungeonLoadConfig.Id);
+            _ = indunManager.Value.CreateSystemInstance(null, GetWorldTemplateByName(dungeonLoadConfig.Name).ZoneKeys.First(), dungeonLoadConfig.Channel, true, dungeonLoadConfig.Id);
         }
         Logger.Info($"Created static instances in {DateTime.UtcNow.Subtract(createInstanceStartTime)} ({GameService.TimeSinceStart} since server start)");
     }
@@ -414,8 +422,9 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         }
 
         // Create a new instance
-        var world = new WorldInstance(worldTemplate, channelId, overrideInstanceId, overrideInstanceId ? fixedInstanceId : WorldIdManager.Instance.GetNextId());
-        _worlds.Add(world.Id, world);
+        var world = new WorldInstance(worldTemplate, channelId, overrideInstanceId, overrideInstanceId ? fixedInstanceId : worldIdManager.GetNextId());
+        if (!_worlds.TryAdd(world.Id, world))
+            throw new InvalidOperationException($"World instance with id {world.Id} already exists");
 
         notifyPlayer?.SendPacket(new SCProcessingInstancePacket((int)world.Template.ZoneKeys[0]));
 
@@ -433,6 +442,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
 
         // Load water data
         world.LoadWaterBodies();
+        world.InitShipStaticBarriers();
 
         // Create and start the actual physics engine
         world.StartPhysics();
@@ -789,7 +799,6 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         return ai.Owner.Spawner?.Position.Z ?? ai.Owner.Transform.World.Position.Z;
     }
 
-
     /// <summary>
     /// Gets the root GameObject all the way up from the parent/child object tree
     /// </summary>
@@ -858,15 +867,15 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <param name="TargetName">Possible target name</param>
     /// <param name="FirstNonNameArgument">Returns 1 if TargetName was a valid online character, 0 otherwise</param>
     /// <returns></returns>
-    public static Character GetTargetOrSelf(Character character, string TargetName, out int FirstNonNameArgument)
+    public Character GetTargetOrSelf(Character character, string targetName, out int firstNonNameArgument)
     {
-        FirstNonNameArgument = 0;
-        if (!string.IsNullOrWhiteSpace(TargetName))
+        firstNonNameArgument = 0;
+        if (!string.IsNullOrWhiteSpace(targetName))
         {
-            var player = Instance.GetCharacter(TargetName);
+            var player = GetCharacter(targetName);
             if (player != null)
             {
-                FirstNonNameArgument = 1;
+                firstNonNameArgument = 1;
                 return player;
             }
         }
@@ -978,13 +987,14 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         if (obj?.Region == null)
             return;
 
-        var neighbors = obj.Region.GetNeighbors();
-        obj.Region?.RemoveObject(obj);
+        var region = obj.Region;
+        var neighbors = region.GetNeighbors();
+        region.RemoveObject(obj);
 
-        if (neighbors == null)
-            return;
-
-        if (neighbors.Length > 0)
+        // Must match AddToCharacters: visibility is updated for this region and all neighbors.
+        // Previously only neighbors were notified, so players in the same region cell never got removal packets.
+        region.RemoveFromCharacters(obj);
+        if (neighbors != null && neighbors.Length > 0)
             foreach (var neighbor in neighbors)
                 neighbor?.RemoveFromCharacters(obj);
 
@@ -1029,10 +1039,20 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     public static List<T> GetAround<T>(GameObject obj, float radius, bool useModelSize = false) where T : class
     {
         var result = new List<T>();
+        GetAround(obj, radius, result, useModelSize);
+        return result;
+    }
+
+    /// <summary>
+    /// Fills <paramref name="result"/> (cleared first) with objects within radius. Use from hot paths to avoid per-query <see cref="List{T}"/> allocations.
+    /// </summary>
+    public static void GetAround<T>(GameObject obj, float radius, List<T> result, bool useModelSize = false) where T : class
+    {
+        result.Clear();
         if (radius <= 0f)
-            return result;
+            return;
         if (obj?.Region == null)
-            return result;
+            return;
 
         if (useModelSize)
             radius += obj.ModelSize;
@@ -1046,8 +1066,6 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
             foreach (var neighbor in obj.Region.GetNeighbors())
                 neighbor?.GetList(result, obj.ObjId, obj.Transform.World.Position.X, obj.Transform.World.Position.Y, radius * radius, useModelSize);
         }
-
-        return result;
     }
 
     /// <summary>
@@ -1140,7 +1158,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
         // Family stuff
         if (character.Family > 0)
         {
-            FamilyManager.Instance.OnCharacterLogin(character);
+            familyManager.Value.OnCharacterLogin(character);
         }
     }
 
@@ -1228,7 +1246,7 @@ public class WorldManager : Singleton<WorldManager>, IWorldManager
     /// <param name="worldInstanceId"></param>
     public void RemoveWorld(uint worldInstanceId)
     {
-        if (!_worlds.Remove(worldInstanceId))
+        if (!_worlds.TryRemove(worldInstanceId, out _))
         {
             Logger.Info($"[Dungeon] couldn't remove the dungeon id={worldInstanceId}!");
         }

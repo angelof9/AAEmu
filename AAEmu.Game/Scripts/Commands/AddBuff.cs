@@ -43,7 +43,7 @@ public class AddBuff : ICommand
         Unit sourceUnit = character;
         Unit targetUnit = null;
 
-        if (!(character.CurrentTarget is Unit selectedUnit))
+        if (character.CurrentTarget is not Unit selectedUnit)
         {
             CommandManager.SendErrorText(this, messageOutput, "No target unit selected");
             return;
@@ -51,7 +51,7 @@ public class AddBuff : ICommand
 
         targetUnit = selectedUnit;
         var userFriendlyName = string.Empty;
-        if (targetUnit is Npc targetNpc)
+        if (selectedUnit is Npc targetNpc)
         {
             userFriendlyName = $"@NPC_NAME({targetNpc.TemplateId})";
         }

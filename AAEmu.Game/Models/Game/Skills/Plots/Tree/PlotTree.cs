@@ -9,18 +9,13 @@ using NLog;
 
 namespace AAEmu.Game.Models.Game.Skills.Plots.Tree;
 
-public class PlotTree
+public class PlotTree(uint plotId)
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    public uint PlotId { get; set; }
+    public uint PlotId { get; set; } = plotId;
 
     public PlotNode RootNode { get; set; }
-
-    public PlotTree(uint plotId)
-    {
-        PlotId = plotId;
-    }
 
     public async Task ExecuteAsync(PlotState state)
     {
@@ -228,7 +223,6 @@ public class PlotTree
     }
     private static void FlushExecutionQueue(Queue<(PlotNode node, PlotTargetInfo targetInfo)> executeQueue, PlotState state)
     {
-
 
         var packets = new CompressedGamePackets();
         while (executeQueue.Count > 0)

@@ -4,11 +4,17 @@ using AAEmu.Login.Core.Packets.C2L;
 
 namespace AAEmu.Login.Core.PacketHandlers.C2L;
 
-public class CAListWorldPacketHandler(IGameController gameController)
-    : ILoginPacketHandler<CAListWorldPacket>
+/// <summary>
+/// Handles the <see cref="CAListWorldPacket"/> which is sent by the client to request the list of available game
+/// worlds.
+/// </summary>
+public class CAListWorldPacketHandler(IGameController gameController) : ILoginPacketHandler<CAListWorldPacket>
 {
-    public void Execute(CAListWorldPacket packet, LoginConnection connection)
+    public async Task Execute(CAListWorldPacket packet, ILoginSession session,
+        CancellationToken cancellationToken)
     {
-        Task.Run(() => gameController.RequestWorldListAsync(connection));
+        var worldList = await gameController.GetWorldListAsync(session.Connection);
+
+        await session.Client.SendWorldListAsync(worldList, cancellationToken);
     }
 }

@@ -2,7 +2,6 @@
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
-using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
@@ -16,7 +15,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class DuelManager : Singleton<DuelManager>
+public class DuelManager : Singleton<DuelManager>, IDuelManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
@@ -26,18 +25,12 @@ public class DuelManager : Singleton<DuelManager>
     private const double DuelDurationTime = 5;    // 5 min
 
     // there can be several duels at the same time
-    private ConcurrentDictionary<uint, Duel> _duels = new();
-    public Dictionary<uint, FactionsEnum> _saveFactions { get; set; } = [];
+    private readonly ConcurrentDictionary<uint, Duel> _duels = new();
+    public Dictionary<uint, FactionsEnum> SaveFactions { get; set; } = [];
 
-    protected DuelManager()
-    {
-        //
-    }
-
-    public static bool Initialize()
+    public void Initialize()
     {
         Logger.Info("Initialising Duel Manager...");
-        return true;
     }
 
     private void DuelAdd(Duel duel)
@@ -79,11 +72,11 @@ public class DuelManager : Singleton<DuelManager>
                 duel.Challenged.IsInDuel = true;
 
                 // spawn flag
-                _combatFlag = new DoodadSpawner();
-                _combatFlag.ParentWorld = challenged.ParentWorld;
-                _combatFlag.Id = 0;
-                _combatFlag.UnitId = 5014; // Combat Flag Id=5014;
-                _combatFlag.Position = duel.Challenger.Transform.CloneAsSpawnPosition();
+                _combatFlag = new DoodadSpawner
+                {
+                    ParentWorld = challenged.ParentWorld, Id = 0, UnitId = 5014, // Combat Flag Id=5014;
+                    Position = duel.Challenger.Transform.CloneAsSpawnPosition()
+                };
                 _combatFlag.Position.X = duel.Challenger.Transform.World.Position.X - (duel.Challenger.Transform.World.Position.X - duel.Challenged.Transform.World.Position.X) / 2;
                 _combatFlag.Position.Y = duel.Challenger.Transform.World.Position.Y - (duel.Challenger.Transform.World.Position.Y - duel.Challenged.Transform.World.Position.Y) / 2;
                 _combatFlag.Position.Z = challenged.ParentWorld.Template.GeoData.GetHeight(_combatFlag.Position.AsPositionVector());
@@ -111,13 +104,13 @@ public class DuelManager : Singleton<DuelManager>
     private void SetFaction(Unit ower, FactionsEnum factionId)
     {
         // change the faction temporarily
-        if (_saveFactions.ContainsKey(ower.Id))
+        if (SaveFactions.ContainsKey(ower.Id))
         {
-            _saveFactions[ower.Id] = ower.Faction.Id;
+            SaveFactions[ower.Id] = ower.Faction.Id;
         }
         else
         {
-            _saveFactions.Add(ower.Id, ower.Faction.Id);
+            SaveFactions.Add(ower.Id, ower.Faction.Id);
         }
 
         ower.SetFaction(factionId);
@@ -126,8 +119,8 @@ public class DuelManager : Singleton<DuelManager>
     private void RestoreFaction(Unit owner)
     {
         // restore the fraction
-        owner.SetFaction(_saveFactions[owner.Id]);
-        _saveFactions.Remove(owner.Id);
+        owner.SetFaction(SaveFactions[owner.Id]);
+        SaveFactions.Remove(owner.Id);
     }
 
     public void DuelStart(uint id)

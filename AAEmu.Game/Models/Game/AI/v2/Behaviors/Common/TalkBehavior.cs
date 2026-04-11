@@ -173,7 +173,7 @@ public class TalkBehavior : BaseCombatBehavior
     {
         if (Ai.Owner.Template.NpcNicknameId != VehicleNickId) return;
 
-        var pos = Ai.Owner.Transform.CloneDetached();
+        using var pos = Ai.Owner.Transform.CloneDetached();
         pos.Local.AddDistanceToFront(SpyglassDist);
         var yaw = (float)MathUtil.CalculateAngleFrom(pos, Ai.Owner.Transform);
 
@@ -181,9 +181,9 @@ public class TalkBehavior : BaseCombatBehavior
         {
             Id = 0,
             UnitId = SpyglassId,
-            Position = pos.CloneAsSpawnPosition()
+            Position = pos.CloneAsSpawnPosition(),
+            ParentWorld = Ai.Owner.ParentWorld
         };
-        spawner.ParentWorld = Ai.Owner.ParentWorld;
         spawner.Position.Yaw = yaw;
         spawner.Position.Pitch = 0;
         spawner.Position.Roll = 0;

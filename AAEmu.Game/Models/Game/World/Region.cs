@@ -1,4 +1,4 @@
-﻿using AAEmu.Game.Core.Managers.World;
+using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
@@ -20,7 +20,7 @@ public class Region(WorldInstance worldInstance, int x, int y, uint zoneKey)
 
     private int X { get; } = x;
     private int Y { get; } = y;
-    public int Id => Y + (1024 * X);
+    public int Id => Y + 1024 * X;
     public uint ZoneKey { get; init; } = zoneKey;
 
     public void AddObject(GameObject obj)
@@ -219,11 +219,18 @@ public class Region(WorldInstance worldInstance, int x, int y, uint zoneKey)
                 character1.SendPacket(new SCGimmicksRemovedPacket(temp));
             }
 
-            if ((character1.CurrentTarget != null) && (unitIds.Contains(character1.CurrentTarget.ObjId)))
+            if (character1.CurrentTarget != null && unitIds.Contains(character1.CurrentTarget.ObjId))
             {
                 character1.CurrentTarget = null;
                 character1.SendPacket(new SCTargetChangedPacket(character1.ObjId, 0));
             }
+
+            // Also remove this character from visibility of nearby players.
+            // Without this, other players keep a stale local copy ("ghost target")
+            // when the character disconnects or leaves the world.
+            foreach (var characterInRegion in GetList(new List<Character>(), character1.ObjId))
+                obj.RemoveVisibleObject(characterInRegion);
+
         }
         // Special handling for non-player objects (NPCs, vehicles, doodads, etc.)
         else

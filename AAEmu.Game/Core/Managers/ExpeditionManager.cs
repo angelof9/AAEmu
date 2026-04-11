@@ -18,7 +18,7 @@ using AAEmu.Game.Models.StaticValues;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class ExpeditionManager : Singleton<ExpeditionManager>
+public class ExpeditionManager(IExpeditionIdManager expeditionIdManager, ITeamManager teamManager, IWorldManager worldManager, IChatManager chatManager) : Singleton<ExpeditionManager>, IExpeditionManager
 {
     //private ExpeditionConfig _config;
     private Regex _nameRegex;
@@ -27,20 +27,22 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
 
     public IEnumerable<Expedition> Expeditions { get => _expeditions.Values; }
 
-    public static Expedition Create(string name, Character owner)
+    private Expedition Create(string name, Character owner)
     {
-        var expedition = new Expedition();
-        expedition.Id = (FactionsEnum)ExpeditionIdManager.Instance.GetNextId();
-        expedition.MotherId = owner.Faction.Id;
-        expedition.Name = name;
-        expedition.OwnerId = owner.Id;
-        expedition.OwnerName = owner.Name;
-        expedition.UnitOwnerType = 0;
-        expedition.PoliticalSystem = 1;
-        expedition.Created = DateTime.UtcNow;
-        expedition.AggroLink = false;
-        expedition.DiplomacyTarget = false;
-        expedition.Members = [];
+        var expedition = new Expedition
+        {
+            Id = (FactionsEnum)expeditionIdManager.GetNextId(),
+            MotherId = owner.Faction.Id,
+            Name = name,
+            OwnerId = owner.Id,
+            OwnerName = owner.Name,
+            UnitOwnerType = 0,
+            PoliticalSystem = 1,
+            Created = DateTime.UtcNow,
+            AggroLink = false,
+            DiplomacyTarget = false,
+            Members = []
+        };
         expedition.Policies = GetDefaultPolicies(expedition.Id);
 
         var member = GetMemberFromCharacter(expedition, owner, true);
@@ -65,17 +67,19 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
                 {
                     while (reader.Read())
                     {
-                        var expedition = new Expedition();
-                        expedition.Id = (FactionsEnum)reader.GetUInt32("id");
-                        expedition.MotherId = (FactionsEnum)reader.GetUInt32("mother");
-                        expedition.Name = reader.GetString("name");
-                        expedition.OwnerId = reader.GetUInt32("owner");
-                        expedition.OwnerName = reader.GetString("owner_name");
-                        expedition.UnitOwnerType = 0;
-                        expedition.PoliticalSystem = 1;
-                        expedition.Created = reader.GetDateTime("created_at");
-                        expedition.AggroLink = false;
-                        expedition.DiplomacyTarget = false;
+                        var expedition = new Expedition
+                        {
+                            Id = (FactionsEnum)reader.GetUInt32("id"),
+                            MotherId = (FactionsEnum)reader.GetUInt32("mother"),
+                            Name = reader.GetString("name"),
+                            OwnerId = reader.GetUInt32("owner"),
+                            OwnerName = reader.GetString("owner_name"),
+                            UnitOwnerType = 0,
+                            PoliticalSystem = 1,
+                            Created = reader.GetDateTime("created_at"),
+                            AggroLink = false,
+                            DiplomacyTarget = false
+                        };
 
                         _expeditions.Add(expedition.Id, expedition);
                     }
@@ -93,20 +97,22 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
                     {
                         while (reader.Read())
                         {
-                            var member = new ExpeditionMember();
-                            member.CharacterId = reader.GetUInt32("character_id");
-                            member.ExpeditionId = (FactionsEnum)reader.GetUInt32("expedition_id");
-                            member.Role = reader.GetByte("role");
-                            member.Memo = reader.GetString("memo");
-                            member.LastWorldLeaveTime = reader.GetDateTime("last_leave_time");
-                            member.Name = reader.GetString("name");
-                            member.Level = reader.GetByte("level");
-                            member.Abilities =
-                            [
-                                reader.GetByte("ability1"), reader.GetByte("ability2"), reader.GetByte("ability3")
-                            ];
-                            member.IsOnline = false;
-                            member.InParty = false;
+                            var member = new ExpeditionMember
+                            {
+                                CharacterId = reader.GetUInt32("character_id"),
+                                ExpeditionId = (FactionsEnum)reader.GetUInt32("expedition_id"),
+                                Role = reader.GetByte("role"),
+                                Memo = reader.GetString("memo"),
+                                LastWorldLeaveTime = reader.GetDateTime("last_leave_time"),
+                                Name = reader.GetString("name"),
+                                Level = reader.GetByte("level"),
+                                Abilities =
+                                [
+                                    reader.GetByte("ability1"), reader.GetByte("ability2"), reader.GetByte("ability3")
+                                ],
+                                IsOnline = false,
+                                InParty = false
+                            };
                             expedition.Members.Add(member);
                         }
                     }
@@ -122,19 +128,21 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
                     {
                         while (reader.Read())
                         {
-                            var policy = new ExpeditionRolePolicy();
-                            policy.ExpeditionId = (FactionsEnum)reader.GetUInt32("expedition_id");
-                            policy.Role = reader.GetByte("role");
-                            policy.Name = reader.GetString("name");
-                            policy.DominionDeclare = reader.GetBoolean("dominion_declare");
-                            policy.Invite = reader.GetBoolean("invite");
-                            policy.Expel = reader.GetBoolean("expel");
-                            policy.Promote = reader.GetBoolean("promote");
-                            policy.Dismiss = reader.GetBoolean("dismiss");
-                            policy.Chat = reader.GetBoolean("chat");
-                            policy.ManagerChat = reader.GetBoolean("manager_chat");
-                            policy.SiegeMaster = reader.GetBoolean("siege_master");
-                            policy.JoinSiege = reader.GetBoolean("join_siege");
+                            var policy = new ExpeditionRolePolicy
+                            {
+                                ExpeditionId = (FactionsEnum)reader.GetUInt32("expedition_id"),
+                                Role = reader.GetByte("role"),
+                                Name = reader.GetString("name"),
+                                DominionDeclare = reader.GetBoolean("dominion_declare"),
+                                Invite = reader.GetBoolean("invite"),
+                                Expel = reader.GetBoolean("expel"),
+                                Promote = reader.GetBoolean("promote"),
+                                Dismiss = reader.GetBoolean("dismiss"),
+                                Chat = reader.GetBoolean("chat"),
+                                ManagerChat = reader.GetBoolean("manager_chat"),
+                                SiegeMaster = reader.GetBoolean("siege_master"),
+                                JoinSiege = reader.GetBoolean("join_siege")
+                            };
                             expedition.Policies.Add(policy);
                         }
                     }
@@ -192,7 +200,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
             }
 
         // ----------------- Conditions, can change this...
-        var team = TeamManager.Instance.GetActiveTeamByUnit(owner.Id);
+        var team = teamManager.GetActiveTeamByUnit(owner.Id);
         if (team == null)// || !team.IsParty)
         {
             // We send the same error on number of party members when we don't have a party
@@ -259,13 +267,13 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
             new SCFactionCreatedPacket(expedition, owner.ObjId, [(owner.ObjId, owner.Id, owner.Name)])
         );
 
-        WorldManager.Instance.BroadcastPacketToServer(new SCFactionListPacket(expedition));
+        worldManager.BroadcastPacketToServer(new SCFactionListPacket(expedition));
         owner.BroadcastPacket(
             new SCUnitExpeditionChangedPacket(owner.ObjId, owner.Id, "", owner.Name, 0, (uint)expedition.Id, false),
             true
         );
 
-        ChatManager.Instance.GetGuildChat(expedition).JoinChannel(owner);
+        chatManager.GetGuildChat(expedition).JoinChannel(owner);
         SendExpeditionInfo(owner);
         // owner.Save(); // Moved to SaveMananger
 
@@ -290,7 +298,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
         Save(expedition);
     }
 
-    public static void Invite(GameConnection connection, string invitedName)
+    public void Invite(GameConnection connection, string invitedName)
     {
         var inviter = connection.ActiveChar;
 
@@ -298,7 +306,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
         if (inviterMember == null || !inviter.Expedition.GetPolicyByRole(inviterMember.Role).Invite)
             return;
 
-        var invited = WorldManager.Instance.GetCharacter(invitedName);
+        var invited = worldManager.GetCharacter(invitedName);
         if (invited == null) return;
         if (invited.Expedition != null) return;
 
@@ -374,7 +382,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
         Save(expedition);
     }
 
-    public static void Kick(GameConnection connection, uint kickedId)
+    public void Kick(GameConnection connection, uint kickedId)
     {
         var character = connection.ActiveChar;
         var expedition = character.Expedition;
@@ -389,7 +397,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
 
         expedition.RemoveMember(kicked);
 
-        var kickedChar = WorldManager.Instance.GetCharacterById(kickedId);
+        var kickedChar = worldManager.GetCharacterById(kickedId);
 
         var changedPacket = new SCUnitExpeditionChangedPacket(kickedChar?.ObjId ?? 0,
             kicked.CharacterId, character.Name, kicked.Name, (uint)expedition.Id, 0, true);
@@ -459,7 +467,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
         Save(expedition);
     }
 
-    public static bool Disband(Character owner)
+    public bool Disband(Character owner)
     {
         var guild = owner.Expedition;
         if (guild == null)
@@ -474,9 +482,9 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
             owner.SendErrorMessage(ErrorMessageType.OnlyExpeditionOwner);
             return false;
         }
-        for (int i = guild.Members.Count - 1; i >= 0; i--)
+        for (var i = guild.Members.Count - 1; i >= 0; i--)
         {
-            var c = WorldManager.Instance.GetCharacterById(guild.Members[i].CharacterId);
+            var c = worldManager.GetCharacterById(guild.Members[i].CharacterId);
             if (c != null)
             {
                 if (c.IsOnline)
@@ -500,7 +508,7 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
 
         character.SendPacket(new SCExpeditionRolePolicyListPacket(character.Expedition.Policies));
 
-        for (int i = 0; i < members.Count; i += 20)
+        for (var i = 0; i < members.Count; i += 20)
         {
             var block = members.Skip(i).Take(20).ToList();
             character.SendPacket(new SCExpeditionMemberListPacket(total, (uint)id, block));
@@ -519,18 +527,20 @@ public class ExpeditionManager : Singleton<ExpeditionManager>
 
     public static ExpeditionMember GetMemberFromCharacter(Expedition expedition, Character character, bool owner)
     {
-        var member = new ExpeditionMember();
-        member.IsOnline = true;
-        member.Name = character.Name;
-        member.Level = character.Level;
-        member.Role = (byte)(owner ? 255 : 0);
-        member.Memo = "";
-        member.Position = new Vector3(character.Transform.World.Position.X, character.Transform.World.Position.Y, character.Transform.World.Position.Z);
-        member.ZoneId = character.Transform.ZoneId;
-        member.Abilities = [(byte)character.Ability1, (byte)character.Ability2, (byte)character.Ability3];
-        member.ExpeditionId = expedition.Id;
-        member.CharacterId = character.Id;
-        member.LastWorldLeaveTime = DateTime.UtcNow;
+        var member = new ExpeditionMember
+        {
+            IsOnline = true,
+            Name = character.Name,
+            Level = character.Level,
+            Role = (byte)(owner ? 255 : 0),
+            Memo = "",
+            Position = new Vector3(character.Transform.World.Position.X, character.Transform.World.Position.Y, character.Transform.World.Position.Z),
+            ZoneId = character.Transform.ZoneId,
+            Abilities = [(byte)character.Ability1, (byte)character.Ability2, (byte)character.Ability3],
+            ExpeditionId = expedition.Id,
+            CharacterId = character.Id,
+            LastWorldLeaveTime = DateTime.UtcNow
+        };
 
         return member;
     }

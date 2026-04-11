@@ -15,14 +15,9 @@ public class LoginProtocolHandler : BaseProtocolHandler
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
-    private ConcurrentDictionary<uint, Type> _packets;
+    private readonly ConcurrentDictionary<uint, Type> _packets = new();
     private PacketStream _lastPacket;
     private LoadTask _loadTask;
-
-    public LoginProtocolHandler()
-    {
-        _packets = new ConcurrentDictionary<uint, Type>();
-    }
 
     public override void OnConnect(ISession session)
     {
@@ -37,7 +32,7 @@ public class LoginProtocolHandler : BaseProtocolHandler
 
     public override void OnDisconnect(ISession session)
     {
-        Logger.Info("Connect to LoginServer has been lost");
+        Logger.Info("Connection to LoginServer has been lost");
         LoginNetwork.Instance.SetConnection(null);
         session.Close();
         if (_loadTask != null)

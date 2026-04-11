@@ -1,7 +1,6 @@
 using System.Numerics;
 
 using AAEmu.Commons.Utils.DB;
-using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
@@ -42,7 +41,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
         lock (_slaveListLock)
         {
             var slaves = World.GetAllSlaves();
-            return slaves.FirstOrDefault(slave => slave.Summoner?.ObjId == objId);
+            return slaves.FirstOrDefault(slave => slave.Summoner?.ObjId == objId && !slave.IsDead);
         }
     }
 
@@ -135,6 +134,15 @@ public class SlaveManager(WorldInstance parentWorldInstance)
     public void UnbindSlave(Character character, uint tlId, AttachUnitReason reason)
     {
         var slave = GetSlaveByTlId(tlId);
+        if (slave == null)
+        {
+            character.Transform.Parent = null;
+            character.Transform.StickyParent = null;
+            character.Buffs.TriggerRemoveOn(BuffRemoveOn.Unmount);
+            character.AttachedPoint = AttachPointKind.None;
+            character.BroadcastPacket(new SCUnitDetachedPacket(character.ObjId, reason), true);
+            return;
+        }
 
         var attachPoint = slave.AttachedCharacters.FirstOrDefault(x => x.Value == character).Key;
         if (attachPoint != default)
@@ -166,7 +174,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
             return;
 
         // Check if the vehicle has the MasterOwnership buff and if the character is not the owner, block the attachment.
-        if (attachPoint == AttachPointKind.Driver && slave.Buffs.CheckBuff((uint)BuffConstants.MasterOwnership) && slave.Summoner.ObjId != character.ObjId)
+        if (attachPoint == AttachPointKind.Driver && slave.Buffs.CheckBuff((uint)BuffConstants.OwnersMark) && slave.Summoner?.ObjId != character.ObjId)
         {
             character.SendErrorMessage(ErrorMessageType.SlaveAlreadyHasMaster); // 仅阻止驾驶座附加
             return;
@@ -195,7 +203,12 @@ public class SlaveManager(WorldInstance parentWorldInstance)
     public void BindSlave(GameConnection connection, uint tlId)
     {
         var unit = connection.ActiveChar;
+        if (unit == null)
+            return;
+
         var slave = GetSlaveByTlId(tlId);
+        if (slave == null || slave.IsDead)
+            return;
 
         BindSlave(unit, slave.ObjId, AttachPointKind.Driver, AttachUnitReason.NewMaster);
     }
@@ -221,7 +234,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
         {
             foreach (var doodad in slaveInfo.AttachedDoodads)
             {
-                if ((doodad.ItemId != 0) || (doodad.ItemTemplateId != 0))
+                if (doodad.ItemId != 0 || doodad.ItemTemplateId != 0)
                 {
                     owner?.SendErrorMessage(ErrorMessageType.SlaveEquipmentLoadedItem); // TODO: Do we need this error? Client already mentions it.
                     return; // don't allow un-summon if some it's holding an item (should be a trade-pack)
@@ -297,7 +310,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
             // return;
         }
 
-        if ((skillData.ItemId == 0) || (skillData.ItemTemplateId == 0))
+        if (skillData.ItemId == 0 || skillData.ItemTemplateId == 0)
             return;
 
         if (skillData.SkillSourceItem.Template is not SummonSlaveTemplate itemTemplate)
@@ -337,7 +350,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
 
         // Check if there's already a slave attached to the summon item (if any)
         #region load_saved_slave
-        if ((owner?.Id > 0) && (item?.Id > 0))
+        if (owner?.Id > 0 && item?.Id > 0)
         {
             using var connection = MySQL.CreateConnection();
             using var command = connection.CreateCommand();
@@ -416,10 +429,10 @@ public class SlaveManager(WorldInstance parentWorldInstance)
                 var minDepth = tempShipModel.MassBoxSizeZ - tempShipModel.MassCenterZ + 1f;
 
                 // Somehow take into account where the ship will end up related to it's mass center (also check boat physics)
-                spawnOffsetPos.Z += (tempShipModel.MassCenterZ < 0f ? (tempShipModel.MassCenterZ / 2f) : 0f) -
+                spawnOffsetPos.Z += (tempShipModel.MassCenterZ < 0f ? tempShipModel.MassCenterZ / 2f : 0f) -
                                     tempShipModel.KeelHeight;
 
-                for (var inFront = 0f; inFront < (50f + tempShipModel.MassBoxSizeX); inFront += 1f)
+                for (var inFront = 0f; inFront < 50f + tempShipModel.MassBoxSizeX; inFront += 1f)
                 {
                     using var depthCheckPos = spawnPos.CloneDetached();
                     depthCheckPos.Local.AddDistanceToFront(inFront);
@@ -440,6 +453,16 @@ public class SlaveManager(WorldInstance parentWorldInstance)
                 }
 
                 spawnPos.Local.Position += spawnOffsetPos;
+
+                // While the summon portal is active, ships do not simulate buoyancy yet.
+                // If the spawn offset pushes the boat too low, it will appear heavily submerged until PortalTime ends.
+                // Clamp the visual spawn height closer to the waterline to keep a reasonable draft during the portal.
+                var hullHeight = tempShipModel.MassBoxSizeZ;
+                // Keep the ship much closer to the surface during the portal animation.
+                // After PortalTime buoyancy will settle it to its natural draft.
+                var minSpawnZ = worldWaterLevel - hullHeight * 0.02f;
+                if (spawnPos.Local.Position.Z < minSpawnZ)
+                    spawnPos.Local.SetHeight(minSpawnZ);
             }
             else
             {
@@ -455,7 +478,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
         }
 
         // Get new Id to save if it has a player as owner
-        if ((owner?.Id > 0) && (dbId <= 0))
+        if (owner?.Id > 0 && dbId <= 0)
             dbId = CharacterIdManager.Instance.GetNextId(); // CharacterIdManager uses both character and slave IDs to populate
 
         // Update the summoning item
@@ -463,7 +486,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
         {
             slaveSummonItem.SlaveType = 0x02;
             slaveSummonItem.SlaveDbId = dbId;
-            if ((slaveSummonItem.IsDestroyed > 0) || (slaveSummonItem.RepairStartTime > DateTime.MinValue))
+            if (slaveSummonItem.IsDestroyed > 0 || slaveSummonItem.RepairStartTime > DateTime.MinValue)
             {
                 var secondsLeft = (slaveSummonItem.RepairStartTime.AddMinutes(10) - DateTime.UtcNow).TotalSeconds;
                 if (secondsLeft > 0.0)
@@ -502,6 +525,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
             Spawner = useSpawner,
             OwnerType = owner != null ? BaseUnitType.Character : BaseUnitType.Invalid,
             OwnerId = owner?.Id ?? 0,
+            OwnerObjId = owner?.ObjId ?? 0,
         };
 
         ApplySlaveBonuses(summonedSlave);
@@ -584,7 +608,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
 
             // NOTE: In 1.2 we can't replace slave parts like sail, so just apply it to all the doodads on spawn
             // Should probably have a check somewhere if a doodad can have the UCC applied or not
-            if (item != null && item.HasFlag(ItemFlag.HasUCC) && (item.UccId > 0))
+            if (item != null && item.HasFlag(ItemFlag.HasUCC) && item.UccId > 0)
                 doodad.UccId = item.UccId;
 
             ApplyAttachPointLocation(summonedSlave, doodad, doodadBinding.AttachPointId);
@@ -594,7 +618,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
             doodad.Spawn();
 
             // Only set IsPersistent if the binding is defined as such
-            if ((owner?.Id > 0) && (item?.Id > 0) && (doodadBinding.Persist))
+            if (owner?.Id > 0 && item?.Id > 0 && doodadBinding.Persist)
             {
                 doodad.IsPersistent = true;
                 doodad.Save();
@@ -641,13 +665,13 @@ public class SlaveManager(WorldInstance parentWorldInstance)
                 }
             } // Parent Slave has DB Id
 
-            if ((summonedSlave.Id > 0) && (childDbId <= 0))
+            if (summonedSlave.Id > 0 && childDbId <= 0)
                 childDbId = CharacterIdManager.Instance.GetNextId(); // Slaves of Persistent Slaves are always persistent as well
 
             var childSlaveTemplate = SlaveGameData.Instance.GetSlaveTemplate(childSlaveTemplateId > 0 ? childSlaveTemplateId : slaveBinding.SlaveId);
             var childTlId = (ushort)TlIdManager.Instance.GetNextId();
             var childObjId = ObjectIdManager.Instance.GetNextId();
-            var childSlave = new Slave()
+            var childSlave = new Slave
             {
                 TlId = childTlId,
                 ObjId = childObjId,
@@ -919,7 +943,7 @@ public class SlaveManager(WorldInstance parentWorldInstance)
 
         foreach (var doodad in slave.AttachedDoodads)
         {
-            if ((doodad.AttachPoint < AttachPointKind.HealPoint0) || (doodad.AttachPoint > AttachPointKind.HealPoint9))
+            if (doodad.AttachPoint < AttachPointKind.HealPoint0 || doodad.AttachPoint > AttachPointKind.HealPoint9)
                 continue;
             currentHealPoints.Add(doodad);
             unUsedHealPoints.Remove(doodad.AttachPoint);
@@ -946,10 +970,10 @@ public class SlaveManager(WorldInstance parentWorldInstance)
             }
         }
 
-        if ((pointsToAdd > 0) && (unUsedHealPoints.Count > 0))
+        if (pointsToAdd > 0 && unUsedHealPoints.Count > 0)
         {
             // We don't have enough points, add some
-            for (var iAdd = 0; (iAdd < pointsToAdd) && (unUsedHealPoints.Count > 0); iAdd++)
+            for (var iAdd = 0; iAdd < pointsToAdd && unUsedHealPoints.Count > 0; iAdd++)
             {
                 // pick a random spot
                 var wreckPointLocation = unUsedHealPoints[Random.Shared.Next(unUsedHealPoints.Count)];

@@ -3,9 +3,11 @@
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Chat;
+using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Tasks.Skills;
@@ -193,7 +195,7 @@ public class Gimmick : Unit
         MovementHandler?.Tick(delta);
 
         // Handle Delayed Skills
-        if ((Template?.SkillDelay > 0) && (!SkillStarted) && (LastLifeTime.TotalMilliseconds < Template.SkillDelay) && (TotalLifeTime.TotalMilliseconds >= Template.SkillDelay))
+        if (Template?.SkillDelay > 0 && !SkillStarted && LastLifeTime.TotalMilliseconds < Template.SkillDelay && TotalLifeTime.TotalMilliseconds >= Template.SkillDelay)
         {
             DoGimmickSkill(Template.SkillId);
         }
@@ -216,7 +218,7 @@ public class Gimmick : Unit
         MovementHandler?.AfterMove(delta, deltaPosition);
 
         // Check LifeTime and apply despawn time if needed
-        if ((Template?.LifeTime > 0) && (Despawn <= DateTime.MinValue) && (TotalLifeTime.TotalMilliseconds >= Template.LifeTime))// && (LastLifeTime.TotalMilliseconds < Template.LifeTime))
+        if (Template?.LifeTime > 0 && Despawn <= DateTime.MinValue && TotalLifeTime.TotalMilliseconds >= Template.LifeTime)// && (LastLifeTime.TotalMilliseconds < Template.LifeTime))
         {
             Despawn = DateTime.UtcNow;
             Spawner?.Despawn(this);
@@ -252,4 +254,13 @@ public class Gimmick : Unit
             gimmick.IsMoving = false;
         }
     }
+
+    public override Character GetOwnerCharacter()
+    {
+        // Not sure if this is even needed
+        if (OwnerId > 0)
+            return WorldManager.Instance.GetCharacterById(OwnerId)?.GetOwnerCharacter();
+        return null;
+    }
+    
 }

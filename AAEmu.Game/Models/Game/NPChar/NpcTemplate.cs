@@ -81,29 +81,20 @@ public class NpcTemplate
     public byte Race { get; set; }
     public byte Gender { get; set; }
     public uint MerchantPackId { get; set; }
+    public uint EquipBodiesId { get; set; }
+    public uint EquipClothsId { get; set; }
+    public uint EquipWeaponsId { get; set; }
 
-    public uint HairId { get; set; }
-    public UnitCustomModelParams ModelParams { get; set; }
-    public EquipItemsTemplate Items { get; set; }
-    public (uint ItemId, bool NpcOnly)[] BodyItems { get; set; }
-    public List<uint> Buffs { get; set; }
-    public List<BonusTemplate> Bonuses { get; set; }
+    public uint HairId { get; set; } = 0;
+    public UnitCustomModelParams ModelParams { get; set; } = new();
+    public EquipItemsTemplate Items { get; set; } = new();
+    public (uint ItemId, bool NpcOnly)[] BodyItems { get; set; } = new (uint, bool)[7];
+    public List<uint> Buffs { get; set; } = [];
+    public List<BonusTemplate> Bonuses { get; set; } = [];
     public AiParams AiParams { get; set; }
-    public Dictionary<SkillUseConditionKind, List<NpcSkill>> Skills { get; set; }
-    public List<NpcPassiveBuff> PassiveBuffs { get; set; }
+    public Dictionary<SkillUseConditionKind, List<NpcSkill>> Skills { get; set; } = [];
+    public List<NpcPassiveBuff> PassiveBuffs { get; set; } = [];
     public uint TotalCustomId { get; set; }
-
-    public NpcTemplate()
-    {
-        HairId = 0;
-        Items = new EquipItemsTemplate();
-        ModelParams = new UnitCustomModelParams();
-        BodyItems = new (uint, bool)[7];
-        Buffs = [];
-        Bonuses = [];
-        Skills = [];
-        PassiveBuffs = [];
-    }
 
     public void BindSkills(List<NpcSkill> skills)
     {

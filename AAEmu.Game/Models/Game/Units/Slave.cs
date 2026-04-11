@@ -13,6 +13,7 @@ using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Slaves;
+using AAEmu.Game.Models.Game.Static;
 using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Physics;
@@ -24,7 +25,7 @@ namespace AAEmu.Game.Models.Game.Units;
 
 public class Slave : Unit
 {
-    public override UnitTypeFlag TypeFlag { get; } = UnitTypeFlag.Slave;
+    public override UnitTypeFlag TypeFlag { get => UnitTypeFlag.Slave; }
     public override BaseUnitType BaseUnitType => BaseUnitType.Slave;
     public override ModelPostureType ModelPostureType { get => ModelPostureType.TurretState; }
     //public uint Id { get; set; } // moved to BaseUnit
@@ -43,10 +44,58 @@ public class Slave : Unit
     public DateTime SpawnTime { get; init; }
     public sbyte ThrottleRequest { get; set; }
     public sbyte Throttle { get; set; }
+    /// <summary>Sub-sbyte smoothing so rudder/throttle do not stair-step when quantized for physics and packets.</summary>
+    public float ThrottleSmoothed { get; set; }
     public float Speed { get; set; }
+    /// <summary>
+    /// Last non-zero movement direction sign for ship handling (-1 backward, +1 forward).
+    /// Used to keep steering behavior stable when speed hovers around zero.
+    /// </summary>
+    public sbyte LastMoveDirSign { get; set; } = 1;
     public sbyte SteeringRequest { get; set; }
     public sbyte Steering { get; set; }
+    public float SteeringSmoothed { get; set; }
     public float RotSpeed { get; set; }
+    /// <summary>Smoothed 0.9..1 multiplier: forward speed loss while turning (see <see cref="ShipController"/>).</summary>
+    public float TurnSpeedVelocityMul { get; set; } = 1f;
+    /// <summary>Visual-only bank angle (radians) applied to ship movement replication.</summary>
+    public float BankAngle { get; set; }
+    /// <summary>Visual-only ground pitch angle (radians) for ships beached on terrain.</summary>
+    public float GroundPitchAngle { get; set; }
+    /// <summary>Grounded contact side hint: true when grounding happened while moving backward (stern-side).</summary>
+    public bool GroundedByStern { get; set; }
+    /// <summary>Grounded state from previous physics tick (used to detect water->ground transition).</summary>
+    public bool GroundedLastTick { get; set; }
+    /// <summary>How long ship stays grounded with near-zero speed while player keeps throttle input.</summary>
+    public float GroundStuckTime { get; set; }
+    /// <summary>Smoothed 0..1 assist strength used to help unstuck from shoal.</summary>
+    public float GroundEscapeAssist { get; set; }
+    /// <summary>Latched "ground contact" state to avoid shoreline jitter.</summary>
+    public bool GroundContactLatched { get; set; }
+    /// <summary>Smoothed terrain height at the active hull probe point.</summary>
+    public float GroundContactFloorSmoothed { get; set; }
+    /// <summary>Smoothed terrain height sampled in front of the hull (for visual pitch).</summary>
+    public float GroundPitchFrontFloorSmoothed { get; set; }
+    /// <summary>Smoothed terrain height sampled behind the hull (for visual pitch).</summary>
+    public float GroundPitchBackFloorSmoothed { get; set; }
+    /// <summary>True after first pitch floor samples; cleared when leaving shoal/latched-ground pitch path.</summary>
+    public bool GroundPitchFloorSmoothingSeeded { get; set; }
+    /// <summary>Phase (rad) for visual wave pitch on water; not replicated as state, only drives local sine.</summary>
+    public float WavePitchPhase { get; set; }
+    /// <summary>True after first contact-floor sample while not latched (unrelated to height being zero).</summary>
+    public bool GroundContactFloorSmoothingSeeded { get; set; }
+    /// <summary>Time (seconds) since ground contact was latched.</summary>
+    public float GroundContactLatchedTime { get; set; }
+    /// <summary>Seconds accumulated toward periodic hull damage while beached (see <see cref="TickBeachedHullDamage(System.TimeSpan)"/>).</summary>
+    public float ShoreGroundDamageSecondsAccumulator { get; set; }
+    /// <summary>Set during ship vs cliff/doodad/barrier resolve when hull overlap was actively corrected this tick.</summary>
+    public bool StaticObstacleHullDamageContactActive { get; set; }
+    /// <summary>Seconds accumulated toward periodic hull damage while against static obstacles (see <see cref="TickStaticObstacleHullDamage(System.TimeSpan)"/>).</summary>
+    public float StaticObstacleHullDamageSecondsAccumulator { get; set; }
+    /// <summary>Continuous time without static-obstacle contact; used to reset <see cref="StaticObstacleHullDamageSecondsAccumulator"/> after a gap.</summary>
+    public float StaticObstacleHullDamageNoContactSeconds { get; set; }
+    /// <summary>Per other-ship cooldown (seconds) for hull-collision %HP (see <see cref="Physics.ShipShipInteraction"/>).</summary>
+    public Dictionary<uint, float> ShipHullCollisionDamageCooldownByOtherShipId { get; } = new();
     public short RotationZ { get; set; }
     public float RotationDegrees { get; set; }
     public sbyte AttachPointId { get; init; } = -1;
@@ -438,7 +487,7 @@ public class Slave : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.MeleeDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -508,7 +557,7 @@ public class Slave : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.RangedDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -558,7 +607,7 @@ public class Slave : Unit
             foreach (var bonus in GetBonuses(UnitAttribute.SpellDpsInc))
             {
                 if (bonus.Template.ModifierType == UnitModifierType.Percent)
-                    res += (res * bonus.Value / 100f);
+                    res += res * bonus.Value / 100f;
                 else
                     res += bonus.Value;
             }
@@ -624,7 +673,7 @@ public class Slave : Unit
     }
 
     [UnitAttribute(UnitAttribute.TurnSpeed)]
-    public virtual float TurnSpeed { get => (float)CalculateWithBonuses(0, UnitAttribute.TurnSpeed); }
+    public virtual float TurnSpeed { get => (float)CalculateWithBonuses(100f, UnitAttribute.TurnSpeed) / 100f; }
 
     #endregion
 
@@ -655,20 +704,100 @@ public class Slave : Unit
     }
 
     /// <summary>
-    /// Damage handler used by BoatPhysics
+    /// While <see cref="GroundContactLatched"/> (beached on shore), advances time toward hull damage dealt once per second.
     /// </summary>
-    /// <param name="damage"></param>
-    /// <param name="isPercent"></param>
-    /// <param name="killReason"></param>
-    public void DoFloorCollisionDamage(int damage, bool isPercent = true, KillReason killReason = KillReason.Damage)
+    public void TickBeachedHullDamage(TimeSpan deltaTime)
     {
-        // If % based, calculate its damage
-        if (isPercent)
+        if (!GroundContactLatched)
         {
-            damage = MaxHp * damage / 100;
+            ShoreGroundDamageSecondsAccumulator = 0f;
+            return;
         }
 
+        const float IntervalSec = 1f;
+        const int PercentPerTick = 1;
+
+        var dt = (float)deltaTime.TotalSeconds;
+        if (dt <= 0f)
+            return;
+
+        ShoreGroundDamageSecondsAccumulator += dt;
+        while (ShoreGroundDamageSecondsAccumulator >= IntervalSec)
+        {
+            ShoreGroundDamageSecondsAccumulator -= IntervalSec;
+            ApplyFloorCollisionDamageImmediate(PercentPerTick, isPercent: true);
+        }
+    }
+
+    /// <summary>
+    /// While in contact with static obstacles (rock face, ship-colliding doodads, polyline barriers), advances time toward hull damage
+    /// dealt once per second — same rate as <see cref="TickBeachedHullDamage(System.TimeSpan)"/>.
+    /// Brief gaps without SAT overlap (e.g. after depenetration) do not zero progress until ~0.35s without contact.
+    /// </summary>
+    public void TickStaticObstacleHullDamage(TimeSpan deltaTime)
+    {
+        const float IntervalSec = 1f;
+        const int PercentPerTick = 1;
+        // After this many seconds without obstacle overlap, drop partial progress (avoids paying out damage after leaving).
+        const float ResetAccumulatorAfterNoContactSec = 0.35f;
+
+        var dt = (float)deltaTime.TotalSeconds;
+        if (dt <= 0f)
+            return;
+
+        if (StaticObstacleHullDamageContactActive)
+        {
+            StaticObstacleHullDamageNoContactSeconds = 0f;
+            StaticObstacleHullDamageSecondsAccumulator += dt;
+            while (StaticObstacleHullDamageSecondsAccumulator >= IntervalSec)
+            {
+                StaticObstacleHullDamageSecondsAccumulator -= IntervalSec;
+                ApplyFloorCollisionDamageImmediate(PercentPerTick, isPercent: true);
+            }
+        }
+        else
+        {
+            StaticObstacleHullDamageNoContactSeconds += dt;
+            if (StaticObstacleHullDamageNoContactSeconds >= ResetAccumulatorAfterNoContactSec)
+                StaticObstacleHullDamageSecondsAccumulator = 0f;
+        }
+    }
+
+    /// <summary>Immediate hull damage from floor/collision (percent of <see cref="MaxHp"/> when <paramref name="isPercent"/>).</summary>
+    private void ApplyFloorCollisionDamageImmediate(int damage, bool isPercent = true, KillReason killReason = KillReason.Damage)
+    {
+        if (isPercent)
+            damage = MaxHp * damage / 100;
+
+        if (damage <= 0)
+            return;
+
+        var oldHp = Hp;
         ReduceCurrentHp(this, damage, killReason);
+        var dealt = oldHp - Hp;
+        if (dealt <= 0)
+            return;
+
+        BroadcastPacket(new SCEnvDamagePacket(EnvSource.Collision, ObjId, (uint)dealt), true);
+    }
+
+    /// <summary>Hull damage from ship–ship collision (<paramref name="damagePercent"/> of <see cref="MaxHp"/>).</summary>
+    internal void ApplyShipHullCollisionDamage(Slave attacker, int damagePercent)
+    {
+        if (damagePercent <= 0 || Hp <= 0)
+            return;
+
+        var damage = MaxHp * damagePercent / 100;
+        if (damage <= 0)
+            return;
+
+        var oldHp = Hp;
+        ReduceCurrentHp(attacker, damage, KillReason.Damage);
+        var dealt = oldHp - Hp;
+        if (dealt <= 0)
+            return;
+
+        BroadcastPacket(new SCEnvDamagePacket(EnvSource.Collision, ObjId, (uint)dealt), true);
     }
 
     public override void PostUpdateCurrentHp(BaseUnit attacker, int oldHpValue, int newHpValue, KillReason killReason = KillReason.Damage)
@@ -694,7 +823,21 @@ public class Slave : Unit
         MarkSummoningItemAsDestroyed();
 
         Summoner?.SendPacket(new SCMySlavePacket(ObjId, TlId, Name, TemplateId, Hp, MaxHp, Transform.World.Position.X, Transform.World.Position.Y, Transform.World.Position.Z));
-        Summoner?.SendPacket(new SCSlaveRemovedPacket(ObjId, TlId));
+        Summoner?.BroadcastPacket(new SCSlaveRemovedPacket(Summoner.ObjId, TlId), true);
+        ClearAllAggro();
+
+        // Unbind all passengers
+        foreach (var character in AttachedCharacters.Values.ToList())
+            ParentWorld.SlaveManager.UnbindSlave(character, TlId, AttachUnitReason.None);
+
+        // Remove from physics simulation (ships only)
+        if (Template.IsABoat())
+            WorldManager.Instance.GetWorld(Transform.InstanceId)?.Physics.RemoveShip(this);
+
+        // Schedule full cleanup via slave.Delete() → Hide() + DetachAll() + RemoveObject()
+        // This keeps the slave visible and selectable during the death animation
+        Despawn = DateTime.UtcNow.AddSeconds(Spawner?.DespawnTime ?? 20);
+        ParentWorld.SpawnManager.AddDespawn(this);
     }
 
     /// <summary>
@@ -726,14 +869,14 @@ public class Slave : Unit
                         if (newDoodad == null)
                         {
                             Logger.Warn($"Dropped Doodad {newDoodadId}, from BackpackDoodadId could not be created");
-                            return;
+                            break;
                         }
                         newDoodad.IsPersistent = true;
                         newDoodad.Transform = doodad.Transform.CloneDetached();
                         // Add a bit of randomness to the dropped doodad
                         newDoodad.Transform.Local.Translate(
-                            (Random.Shared.NextSingle() * 2f) - 1f,
-                            (Random.Shared.NextSingle() * 2f) - 1f,
+                            Random.Shared.NextSingle() * 2f - 1f,
+                            Random.Shared.NextSingle() * 2f - 1f,
                             0f);
                         newDoodad.AttachPoint = AttachPointKind.None;
                         newDoodad.ItemId = droppedItem.Id;
@@ -801,7 +944,7 @@ public class Slave : Unit
             {
                 var doodad = DoodadManager.Instance.Create(ParentWorld, 0, dropDoodad.DoodadId, null, true);
                 var pos = Transform.World.Position;
-                var rng = new Vector3((Random.Shared.NextSingle() * 2f) - 1f, (Random.Shared.NextSingle() * 2f) - 1f, 0);
+                var rng = new Vector3(Random.Shared.NextSingle() * 2f - 1f, Random.Shared.NextSingle() * 2f - 1f, 0);
                 rng = Vector3.Normalize(rng);
                 rng *= Random.Shared.NextSingle() * dropDoodad.Radius;
                 pos += rng;
@@ -954,5 +1097,11 @@ public class Slave : Unit
         CachedFloorLevel = ParentWorld.GetHeight(Transform.World.Position.X, Transform.World.Position.Y);
         CachedWaterSurface = ParentWorld.Water.GetWaterSurface(Transform.World.Position, out var cachedWaterFlow);
         CachedWaterFlow = cachedWaterFlow;
+    }
+
+    public override Character GetOwnerCharacter()
+    {
+        var ownerObject = Summoner ?? (OwnerObjId > 0 ? ParentWorld.GetGameObject(OwnerObjId) as BaseUnit : null);
+        return ownerObject?.GetOwnerCharacter();
     }
 }

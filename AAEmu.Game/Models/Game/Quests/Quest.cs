@@ -305,12 +305,12 @@ public partial class Quest : PacketMarshaler
     {
         var res = true;
         // Distribute Items if needed
-        if ((QuestRewardItemsPool.Count > 0) && (AllowItemRewards))
+        if (QuestRewardItemsPool.Count > 0 && AllowItemRewards)
         {
             // TODO: Add a way to distribute honor or vocation badges in mail as well
             if (Owner.Inventory.Bag.FreeSlotCount < QuestRewardItemsPool.Count)
             {
-                var mails = MailManager.CreateQuestRewardMails(Owner, this, QuestRewardItemsPool, QuestRewardCoinsPool);
+                var mails = MailManager.Instance.CreateQuestRewardMails(Owner, this, QuestRewardItemsPool, QuestRewardCoinsPool);
                 QuestRewardCoinsPool = 0; // Coins will be distributed in mail if any mail needed to be sent, so set to zero again
                 foreach (var mail in mails)
                     if (!mail.Send())
@@ -341,7 +341,7 @@ public partial class Quest : PacketMarshaler
         }
 
         // Add quest level based rewards
-        if ((addBaseQuestReward) && (Template.Level > 0) && (Step == QuestComponentKind.Reward))
+        if (addBaseQuestReward && Template.Level > 0 && Step == QuestComponentKind.Reward)
         {
             var levelBasedRewards = QuestManager.Instance.GetSupplies(Template.Level);
             if (levelBasedRewards != null)

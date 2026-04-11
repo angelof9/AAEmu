@@ -38,6 +38,9 @@ public class IdManager
         PrimeFinder.Init();
     }
 
+    /// <summary>Called by the ManagerOrchestrator in Stage 2, delegating to Initialize().</summary>
+    public void Load() => Initialize();
+
     /// <summary>
     /// Initializes the IdManager for use by resetting the Ids and grabbing data from the database if needed
     /// </summary>
@@ -45,7 +48,7 @@ public class IdManager
     /// <returns></returns>
     public bool Initialize(bool forceReset = false)
     {
-        if (_initialized && (forceReset == false))
+        if (_initialized && forceReset == false)
             return true;
 
         try

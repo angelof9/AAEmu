@@ -8,6 +8,7 @@ using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.Gimmicks;
 using AAEmu.Game.Models.Game.Indun;
+using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Units;
 
@@ -66,6 +67,20 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
     /// Water definitions
     /// </summary>
     public WaterBodies Water { get; set; }
+
+    /// <summary>
+    /// BAI-derived ship collision polylines (non-null when <see cref="WorldConfig.GeoDataMode"/> was on at init).
+    /// </summary>
+    public ShipStaticBarrierZones ShipStaticBarriers { get; set; }
+
+    /// <summary>Serial for BAI-derived barrier names (per instance).</summary>
+    internal int ShipBarrierBaiNameSerial;
+
+    /// <summary>World cells whose <c>areasmission</c> polygons were already ingested for ship barriers.</summary>
+    internal readonly HashSet<(int CellX, int CellY)> ShipBarrierBaiIngestedCells = [];
+
+    /// <summary>Protects <see cref="ShipStaticBarriers"/> mutations and BAI ingest bookkeeping.</summary>
+    internal readonly object ShipStaticBarriersMutationLock = new();
 
     /// <summary>
     /// Event handlers
@@ -245,7 +260,7 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
     /// <returns></returns>
     private static System.Drawing.Rectangle FindNearestSignificantPoints(int x, int y)
     {
-        return new System.Drawing.Rectangle(x - (x % 2), y - (y % 2), 2, 2);
+        return new System.Drawing.Rectangle(x - x % 2, y - y % 2, 2, 2);
     }
 
     /// <summary>
@@ -362,6 +377,15 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
         {
             Water = newWater;
         }
+    }
+
+    /// <summary>
+    /// Allocates ship static barrier storage when geodata is enabled (BAI ingest fills it from physics).
+    /// </summary>
+    public void InitShipStaticBarriers()
+    {
+        if (AppConfiguration.Instance.World.GeoDataMode)
+            ShipStaticBarriers = new ShipStaticBarrierZones();
     }
     #endregion PhysicalProperties
     
@@ -619,6 +643,16 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
     }
 
     /// <summary>
+    /// Gets a Slave by it's ObjId
+    /// </summary>
+    /// <param name="slaveObjId"></param>
+    /// <returns></returns>
+    public Slave GetSlaveByObjId(uint slaveObjId)
+    {
+        return _slaves.GetValueOrDefault(slaveObjId);
+    }
+
+    /// <summary>
     /// Gets a list of all pets in this instance
     /// </summary>
     /// <returns></returns>
@@ -668,7 +702,10 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
 
     public void CleanupInstance()
     {
-        // Stop respawn system
+        // Stop respawn system (check for null as SpawnManager may not be initialized in tests)
+        if (SpawnManager == null)
+            return;
+
         SpawnManager.Stop(); // Stop respawn loop
         try
         {
@@ -701,7 +738,7 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
             unit.IsInBattle = false;
         }
 
-        if ((unit is Character { IsInPostCast: true } character) && character.LastCast.AddSeconds(5) < DateTime.UtcNow)
+        if (unit is Character { IsInPostCast: true } character && character.LastCast.AddSeconds(5) < DateTime.UtcNow)
         {
             character.IsInPostCast = false;
         }

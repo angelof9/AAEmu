@@ -4,17 +4,13 @@ using AAEmu.Game.Core.Network.Game;
 
 namespace AAEmu.Game.Core.Packets.C2G;
 
-public class CSInviteToExpeditionPacket : GamePacket
+public class CSInviteToExpeditionPacket() : GamePacket(CSOffsets.CSInviteToExpeditionPacket, 1)
 {
-    public CSInviteToExpeditionPacket() : base(CSOffsets.CSInviteToExpeditionPacket, 1)
-    {
-    }
-
     public override void Read(PacketStream stream)
     {
         var name = stream.ReadString();
 
         Logger.Debug("InviteToExpedition, Name: {0}", name);
-        ExpeditionManager.Invite(Connection, name);
+        ExpeditionManager.Instance.Invite(Connection, name);
     }
 }

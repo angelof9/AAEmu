@@ -10,7 +10,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class MusicManager : Singleton<MusicManager>
+public class MusicManager(IMusicIdManager musicIdManager, IItemManager itemManager) : Singleton<MusicManager>, IMusicManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
@@ -34,7 +34,7 @@ public class MusicManager : Singleton<MusicManager>
                 {
                     while (reader.Read())
                     {
-                        var songData = new SongData()
+                        var songData = new SongData
                         {
                             Id = reader.GetUInt32("id"),
                             AuthorId = reader.GetUInt32("author"),
@@ -50,7 +50,7 @@ public class MusicManager : Singleton<MusicManager>
 
     public bool Save(SongData songData)
     {
-        songData.Id = MusicIdManager.Instance.GetNextId();
+        songData.Id = musicIdManager.GetNextId();
 
         using (var connection = MySQL.CreateConnection())
         {
@@ -93,7 +93,7 @@ public class MusicManager : Singleton<MusicManager>
     public bool CreateSheetMusic(Character player, Item sourceItem)
     {
         // Check if a valid owned item
-        if ((sourceItem == null) || (sourceItem._holdingContainer.OwnerId != player.Id))
+        if (sourceItem == null || sourceItem._holdingContainer.OwnerId != player.Id)
         {
             Logger.Warn("Player {0} ({1}) does not own the used source item", player.Name, player.Id);
             return false;
@@ -117,7 +117,7 @@ public class MusicManager : Singleton<MusicManager>
         // Save to DB
         if (Save(sud))
         {
-            var sheet = (MusicSheetItem)ItemManager.Instance.Create(Item.SheetMusic, 1, 0, true);
+            var sheet = (MusicSheetItem)itemManager.Create(Item.SheetMusic, 1, 0, true);
             sheet.OwnerId = player.Id;
             sheet.MadeUnitId = player.Id;
             sheet.SongId = sud.Id;
@@ -158,6 +158,6 @@ public class MusicManager : Singleton<MusicManager>
     {
         if (_midiCache.TryGetValue(playerId, out var data))
             return data;
-        return Array.Empty<byte>();
+        return [];
     }
 }

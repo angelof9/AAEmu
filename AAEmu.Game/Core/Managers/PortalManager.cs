@@ -26,7 +26,7 @@ using Portal = AAEmu.Game.Models.Game.Portal;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class PortalManager : Singleton<PortalManager>
+public class PortalManager(ILocalizationManager localizationManager, IWorldManager worldManager, IZoneManager zoneManager, INpcManager npcManager, IObjectIdManager objectIdManager, ITaskManager taskManager) : Singleton<PortalManager>, IPortalManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
@@ -143,7 +143,7 @@ public class PortalManager : Singleton<PortalManager>
         if (JsonHelper.TryDeserializeObject(contents, out List<Portal> recalls, out _))
             foreach (var recall in recalls)
             {
-                recall.Name = LocalizationManager.Instance.Get("return_points", "name", recall.Id, recall.Name);
+                recall.Name = localizationManager.Get("return_points", "name", recall.Id, recall.Name);
 
                 var rp = new List<Portal>();
                 if (!_recalls.TryGetValue(recall.SubZoneId, out var value))
@@ -182,7 +182,7 @@ public class PortalManager : Singleton<PortalManager>
         if (JsonHelper.TryDeserializeObject(contents, out List<Portal> respawns, out _))
             foreach (var respawn in respawns)
             {
-                respawn.ZoneId = WorldManager.Instance.GetZoneId(WorldManager.Instance.GetWorldTemplateByName("main_world"), respawn.X, respawn.Y);
+                respawn.ZoneId = worldManager.GetZoneId(worldManager.GetWorldTemplateByName("main_world"), respawn.X, respawn.Y);
                 if (_respawns.ContainsKey(respawn.SubZoneId))
                 {
                     //
@@ -291,8 +291,8 @@ public class PortalManager : Singleton<PortalManager>
 
     private bool CheckCanOpenPortal(Character owner, uint targetZoneId)
     {
-        var targetContinent = ZoneManager.Instance.GetTargetIdByZoneId(targetZoneId);
-        var ownerContinent = ZoneManager.Instance.GetTargetIdByZoneId(owner.Transform.ZoneId);
+        var targetContinent = zoneManager.GetTargetIdByZoneId(targetZoneId);
+        var ownerContinent = zoneManager.GetTargetIdByZoneId(owner.Transform.ZoneId);
 
         if (targetContinent == ownerContinent)
         {
@@ -319,7 +319,7 @@ public class PortalManager : Singleton<PortalManager>
     /// <param name="portalInfo"></param>
     /// <param name="portalEffectObj"></param>
     /// <returns></returns>
-    private static Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj, uint portalNpcId)
+    private Models.Game.Units.Portal MakePortal(Unit owner, bool isExit, Portal portalInfo, SkillObjectUnk1 portalEffectObj, uint portalNpcId)
     {
         var portalPointDestination = new Transform(null, null,
             portalInfo.ZoneId,
@@ -330,7 +330,7 @@ public class PortalManager : Singleton<PortalManager>
         // Remove region below for client that support new portals
         #region Custom New portals
         var templateId = isExit ? 6949u : 3891u;
-        var template = NpcManager.Instance.GetTemplate(templateId);
+        var template = npcManager.GetTemplate(templateId);
         var portalCustomModelId = template.ModelId;
         if (owner is Character character)
         {
@@ -343,7 +343,7 @@ public class PortalManager : Singleton<PortalManager>
                 var randomPortalBook = portalBooks[random.Next(portalBooks.Count)];
                 var portalSkillId = ItemManager.Instance.GetTemplate(randomPortalBook.TemplateId).UseSkillId;
                 var openPortalEffectTemplate = (Models.Game.Skills.Effects.OpenPortalEffect)SkillManager.Instance.GetSkillTemplate(portalSkillId).Effects[0].Template;
-                portalCustomModelId = isExit ? NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalExitId).ModelId : NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalEnterId).ModelId;
+                portalCustomModelId = isExit ? npcManager.GetTemplate(openPortalEffectTemplate.portalExitId).ModelId : NpcManager.Instance.GetTemplate(openPortalEffectTemplate.portalEnterId).ModelId;
                 Logger.Debug($"Custom portals (random): {0} ModelId {portalCustomModelId}", isExit ? "Exit" : "Enter");
             }
             else
@@ -355,7 +355,7 @@ public class PortalManager : Singleton<PortalManager>
         var portalNpc = new Models.Game.Units.Portal
         {
             ParentWorld = owner.ParentWorld,
-            ObjId = ObjectIdManager.Instance.GetNextId(),
+            ObjId = objectIdManager.GetNextId(),
             OwnerId = ((Character)owner).Id,
             TemplateId = templateId,
             Template = template,
@@ -409,7 +409,7 @@ public class PortalManager : Singleton<PortalManager>
         portalNpc.Spawn();
 
         var killTask = new KillPortalTask(portalNpc);
-        TaskManager.Instance.Schedule(killTask, TimeSpan.FromSeconds(30));
+        taskManager.Schedule(killTask, TimeSpan.FromSeconds(30));
         return portalNpc;
     }
 
@@ -432,7 +432,7 @@ public class PortalManager : Singleton<PortalManager>
         if (portalInfo == null) return;
 
         //have Overburdened buff cannot UsePortal
-        if (character.Buffs.CheckBuffTag((uint)BuffConstants.Overburdened))
+        if (character.Buffs.CheckBuffTag((uint)BuffConstants.TagOverburdened))
         {
             character.SendErrorMessage(ErrorMessageType.CannotUsePortalWithBackpack);
             return;
@@ -498,7 +498,7 @@ public class PortalManager : Singleton<PortalManager>
             if (districts.Count > 0)
             {
                 var factions = districts.Select(d => d.FactionId).Distinct().ToList();
-                if ((factions.Count > 0) && !factions.Contains(character.Faction.MotherId) && !factions.Contains(character.Faction.Id))
+                if (factions.Count > 0 && !factions.Contains(character.Faction.MotherId) && !factions.Contains(character.Faction.Id))
                 {
                     continue;
                 }
@@ -507,7 +507,7 @@ public class PortalManager : Singleton<PortalManager>
             // Check if it's a closed zone (for non-admins)
             if (character is { AccessLevel: < 100 })
             {
-                var zone = ZoneManager.Instance.GetZoneByKey(value.ZoneId);
+                var zone = zoneManager.GetZoneByKey(value.ZoneId);
                 if (zone is null or { Closed: true })
                 {
                     continue;

@@ -32,7 +32,7 @@ using NLog;
 namespace AAEmu.Game.Core.Managers.UnitManagers;
 
 // ReSharper disable once ClassNeverInstantiated.Global
-public class DoodadManager : Singleton<DoodadManager>
+public class DoodadManager(IObjectIdManager objectIdManager, IDoodadIdManager doodadIdManager, IItemManager itemManager, Lazy<IHousingManager> housingManager, ISusManager susManager) : Singleton<DoodadManager>, IDoodadManager
 {
     private Dictionary<uint, DoodadFuncGroups> _allFuncGroups;
 
@@ -1103,7 +1103,7 @@ public class DoodadManager : Singleton<DoodadManager>
                         {
                             Id = reader.GetUInt32("id"),
                             SkillId = reader.GetUInt32("skill_id"),
-                            CrimeValue = reader.GetInt32("crime_value"),
+                            CrimeValue = reader.GetInt16("crime_value"),
                             CrimeKindId = reader.GetUInt32("crime_kind_id")
                         };
                         _funcTemplates["DoodadFuncEvidenceItemLoot"].Add(func.Id, func);
@@ -2492,7 +2492,7 @@ public class DoodadManager : Singleton<DoodadManager>
                         if (mm >= 60)
                             Logger.Warn($"DoodadFuncToD has invalid value for minutes, Id {func.Id}, ToD {func.Tod}");
                         mm %= 60;
-                        func.TodAsHours = (hh * 1f) + (mm / 60f);
+                        func.TodAsHours = hh * 1f + mm / 60f;
 
                         _phaseFuncTemplates["DoodadFuncTod"].Add(func.Id, func);
                     }
@@ -2646,7 +2646,7 @@ public class DoodadManager : Singleton<DoodadManager>
                         var cofferCapacity = IsCofferTemplate(templateId);
 
                         var template = cofferCapacity > 0
-                            ? new DoodadCofferTemplate() { Capacity = cofferCapacity }
+                            ? new DoodadCofferTemplate { Capacity = cofferCapacity }
                             : new DoodadTemplate();
 
                         template.Id = templateId;
@@ -2802,7 +2802,7 @@ public class DoodadManager : Singleton<DoodadManager>
         }
         doodad.ParentWorld = parentWorld;
 
-        doodad.ObjId = bcId > 0 ? bcId : ObjectIdManager.Instance.GetNextId();
+        doodad.ObjId = bcId > 0 ? bcId : objectIdManager.GetNextId();
         doodad.TemplateId = template.Id; // copy the templateId
         doodad.Template = template;
         doodad.OwnerObjId = ownerObject?.ObjId ?? 0;
@@ -2985,12 +2985,12 @@ public class DoodadManager : Singleton<DoodadManager>
     /// <summary>
     /// Saves and creates a doodad
     /// </summary>
-    public static Doodad CreatePlayerDoodad(Character character, uint id, float x, float y, float z, float zRot, float scale, ulong itemId, FarmType farmType = FarmType.Invalid)
+    public Doodad CreatePlayerDoodad(Character character, uint id, float x, float y, float z, float zRot, float scale, ulong itemId, FarmType farmType = FarmType.Invalid, uint itemTemplateId = 0, int customData = 0, bool ignoreHouses = false)
     {
         Logger.Warn($"{character.Name} is placing a doodad {id} at position {x} {y} {z}");
 
         // NOTE: If you would ever want to use player housing outside of main_world, you'll need to modify this
-        var targetHouse = HousingManager.Instance.GetHouseAtLocation(x, y);
+        var targetHouse = !ignoreHouses ? housingManager.Value.GetHouseAtLocation(x, y) : null;
 
         // Create doodad
         var doodad = Instance.Create(character.ParentWorld, 0, id, character, true);
@@ -3003,6 +3003,8 @@ public class DoodadManager : Singleton<DoodadManager>
         doodad.ItemId = itemId;
         doodad.PlantTime = DateTime.UtcNow;
         doodad.FarmType = farmType;
+        doodad.ItemTemplateId = itemTemplateId;
+        doodad.Data = customData;
         if (targetHouse != null)
         {
             doodad.OwnerDbId = targetHouse.Id;
@@ -3022,21 +3024,25 @@ public class DoodadManager : Singleton<DoodadManager>
             doodad.SetScale(scale);
         }
 
-        // Consume item
-        var items = ItemManager.Instance.GetItemIdsFromDoodad(id);
-        var preferredItem = character.Inventory.Bag.GetItemByItemId(itemId);
-
-        if (preferredItem == null)
+        var items = itemManager.GetItemIdsFromDoodad(id);
+        var preferredItem = itemId > 0 ? character.Inventory.Bag.GetItemByItemId(itemId) : null;
+        if (itemId > 0)
         {
-            Logger.Error($"Unable to create doodad because source item (Id: {itemId}) does not exist in {character.Name}'s bag inventory.");
-            doodad.Delete();
-            return null;
-        }
+            // Consume item
 
-        doodad.ItemTemplateId = preferredItem.TemplateId;
-        if (preferredItem.Template.MaxCount > 1)
-        {
-            doodad.ItemId = 0; // If it's a stackable item, don't store the actual itemId, but only it's templateId
+            if (preferredItem == null)
+            {
+                Logger.Error($"Unable to create doodad because source item (Id: {itemId}) does not exist in {character.Name}'s bag inventory.");
+                doodad.Delete();
+                return null;
+            }
+
+            doodad.ItemTemplateId = preferredItem.TemplateId;
+
+            if (preferredItem.Template.MaxCount > 1)
+            {
+                doodad.ItemId = 0; // If it's a stackable item, don't store the actual itemId, but only it's templateId
+            }
         }
 
         if (doodad is DoodadCoffer coffer)
@@ -3059,12 +3065,12 @@ public class DoodadManager : Singleton<DoodadManager>
         return doodad;
     }
 
-    public static bool OpenCofferDoodad(Character character, uint objId)
+    public bool OpenCofferDoodad(Character character, uint objId)
     {
         var doodad = character.ParentWorld.GetDoodad(objId);
         if (doodad is not DoodadCoffer coffer)
         {
-            SusManager.Instance.LogActivity(SusManager.CategoryCheating, character, $"{character.Name} tried to open doodad {objId} as a Coffer");
+            susManager.LogActivity(SusManager.CategoryCheating, character, $"{character.Name} tried to open doodad {objId} as a Coffer");
             return false;
         }
 
@@ -3088,12 +3094,12 @@ public class DoodadManager : Singleton<DoodadManager>
         return true;
     }
 
-    public static bool CloseCofferDoodad(Character character, uint objId)
+    public bool CloseCofferDoodad(Character character, uint objId)
     {
         var doodad = character.ParentWorld.GetDoodad(objId);
         if (doodad is not DoodadCoffer coffer)
         {
-            SusManager.Instance.LogActivity(SusManager.CategoryCheating, character, $"{character.Name} tried to close doodad {objId} as a Coffer");
+            susManager.LogActivity(SusManager.CategoryCheating, character, $"{character.Name} tried to close doodad {objId} as a Coffer");
             return false;
         }
 
@@ -3182,25 +3188,25 @@ public class DoodadManager : Singleton<DoodadManager>
                 return;
             }
         }
-        DoodadIdManager.Instance.ReleaseId(dbId); // Free up the Id
+        doodadIdManager.ReleaseId(dbId); // Free up the Id
 
         // Handle attached items
         if (attachedItemId > 0)
         {
-            var item = ItemManager.Instance.GetItemByItemId(attachedItemId);
+            var item = itemManager.GetItemByItemId(attachedItemId);
             if (item != null)
             {
                 item._holdingContainer = null;
-                ItemManager.Instance.ReleaseId(item.Id);
+                itemManager.ReleaseId(item.Id);
             }
         }
 
         // Delete attached container
         if (attachedContainer > 0)
         {
-            var container = ItemManager.Instance.GetItemContainerByDbId(attachedContainer);
+            var container = itemManager.GetItemContainerByDbId(attachedContainer);
             if (container != null)
-                ItemManager.Instance.DeleteItemContainer(container);
+                itemManager.DeleteItemContainer(container);
         }
     }
 

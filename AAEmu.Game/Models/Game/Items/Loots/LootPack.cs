@@ -26,12 +26,13 @@ public class LootPack
     /// </summary>
     /// <param name="player">Player whose loot multipliers need to be used</param>
     /// <param name="actabilityType">Actability that triggered the Loot generation</param>
+    /// <param name="inheritedGrade">Grade to inherit (Optional)</param>
     /// <returns></returns>
-    public List<(uint itemId, int count, byte grade, uint originalGroup)> GeneratePack(Character player, ActabilityType actabilityType)
+    public List<(uint itemId, int count, byte grade, uint originalGroup)> GeneratePack(Character player, ActabilityType actabilityType, byte? inheritedGrade = null)
     {
         var lootDropRate = (100f + player.DropRateMul) / 100f;
         var lootGoldRate = (100f + player.LootGoldMul) / 100f;
-        return GeneratePackNewV2(lootDropRate, lootGoldRate, player, actabilityType);
+        return GeneratePackNewV2(lootDropRate, lootGoldRate, player, actabilityType, inheritedGrade);
     }
 
     /// <summary>
@@ -73,7 +74,7 @@ public class LootPack
 
                 // Logger.Debug($"Rolling loot with pack {Id}, GroupNo {gIdx} rolled {dice}/{lootGroup.DropRate}");
 
-                if ((lootGroup.DropRate > 0) && (dice > lootGroup.DropRate))
+                if (lootGroup.DropRate > 0 && dice > lootGroup.DropRate)
                     continue;
             }
 
@@ -108,7 +109,7 @@ public class LootPack
 
             List<Loot> selected = [];
 
-            if ((alwaysDropGroup == false) && (uniqueItemDrop || hasLootGroup || (GroupCount <= 1)))
+            if (alwaysDropGroup == false && (uniqueItemDrop || hasLootGroup || GroupCount <= 1))
             {
                 selected.Add(loots.RandomElementByWeight(l => l.DropRate));
             }
@@ -172,8 +173,9 @@ public class LootPack
     /// <param name="lootGoldRate">1.0f = 100% applies to coins item only</param>
     /// <param name="player">The player the loot is generated for, currently only used to handle exclusions</param>
     /// <param name="actabilityType">AbilityType used to initiate the loot generation (used to calculate bonus)</param>
+    /// <param name="inheritedGrade">Grade to inherit (Optional)</param>
     /// <returns></returns>
-    public List<(uint itemId, int count, byte grade, uint lootGroupOrigin)> GeneratePackNewV2(float lootDropRate, float lootGoldRate, Character player, ActabilityType actabilityType)
+    public List<(uint itemId, int count, byte grade, uint lootGroupOrigin)> GeneratePackNewV2(float lootDropRate, float lootGoldRate, Character player, ActabilityType actabilityType, byte? inheritedGrade = null)
     {
         var items = new List<(uint itemId, int count, byte grade, uint lootGroupOrigin)>();
 
@@ -191,7 +193,7 @@ public class LootPack
                 {
                     // Check for Quest loot drops
                     var itemTemplate = ItemManager.Instance.GetTemplate(loot.ItemId);
-                    if ((itemTemplate?.LootQuestId > 0) && (player != null))
+                    if (itemTemplate?.LootQuestId > 0 && player != null)
                     {
                         // Skip item if player does not have quest
                         if (!player.Quests.HasQuest(itemTemplate.LootQuestId))
@@ -201,7 +203,7 @@ public class LootPack
                     // Roll each item
                     var requiresDice = (long)Math.Floor(loot.DropRate * lootDropRate * AppConfiguration.Instance.World.LootRate);
                     var dice = (long)Random.Shared.Next(0, 10_000_000);
-                    if ((dice < requiresDice) || loot.AlwaysDrop)
+                    if (dice < requiresDice || loot.AlwaysDrop)
                     {
                         if (!selectedItemsByGroup.ContainsKey(loot.Group))
                             selectedItemsByGroup.Add(loot.Group, []);
@@ -224,7 +226,7 @@ public class LootPack
                     {
                         var itemTemplate = ItemManager.Instance.GetTemplate(loot.ItemId);
                         // Check for questS itemS in group
-                        if ((itemTemplate?.LootQuestId > 0) && (player != null))
+                        if (itemTemplate?.LootQuestId > 0 && player != null)
                         {
                             // Add item if player has quest
                             if (player.Quests.HasQuest(itemTemplate.LootQuestId))
@@ -247,7 +249,7 @@ public class LootPack
                                 actDice = (long)Math.Floor(actDice / (lootDropRate * AppConfiguration.Instance.World.LootRate));
 
                                 var actLevelMultiplier = 1f;
-                                if ((player != null) && (player.Actability.Actabilities.TryGetValue((byte)actabilityType, out var actAbility)))
+                                if (player != null && player.Actability.Actabilities.TryGetValue((byte)actabilityType, out var actAbility))
                                 {
                                     actLevelMultiplier *= actAbility.GetLootMultiplier();
                                 }
@@ -273,7 +275,7 @@ public class LootPack
                         foreach (var loot in tmpSelectedItemsByGroup[groupNo])
                         {
                             var itemRate = loot.DropRate > 1 ? loot.DropRate / (float)normalizedRate : 1f;
-                            cumulativeRate += (long)Math.Floor((float)normalizedRate * itemRate * lootDropRate * AppConfiguration.Instance.World.LootRate);
+                            cumulativeRate += (long)Math.Floor(normalizedRate * itemRate * lootDropRate * AppConfiguration.Instance.World.LootRate);
                             if (roll < cumulativeRate)
                             {
                                 if (!selectedItemsByGroup.ContainsKey(loot.Group))
@@ -308,8 +310,8 @@ public class LootPack
                     if (loot.ItemId == Item.Coins)
                         countToAddNow = (int)Math.Round(countToAddNow * lootGoldRate * AppConfiguration.Instance.World.GoldLootMultiplier);
                     // Choose grade
-                    var generatedGrade = loot.GradeId;
-                    if (group?.ItemGradeDistributionId > 0)
+                    var generatedGrade = inheritedGrade ?? loot.GradeId;
+                    if (inheritedGrade == null && group?.ItemGradeDistributionId > 0)
                         generatedGrade = GetGradeFromDistribution(group.ItemGradeDistributionId);
                     // Add selected item to final item
                     items.Add((loot.ItemId, countToAddNow, generatedGrade, loot.Group));
@@ -352,7 +354,7 @@ public class LootPack
                     actDice = (long)Math.Floor(actDice / (lootDropRate * AppConfiguration.Instance.World.LootRate));
 
                     var actLevelMultiplier = 1f;
-                    if ((player != null) && (player.Actability.Actabilities.TryGetValue((byte)actabilityType, out var actAbility)))
+                    if (player != null && player.Actability.Actabilities.TryGetValue((byte)actabilityType, out var actAbility))
                     {
                         actLevelMultiplier *= actAbility.GetLootMultiplier();
                     }
@@ -367,7 +369,7 @@ public class LootPack
 
                 // Check for Quest loot drops
                 var itemTemplate = ItemManager.Instance.GetTemplate(loot.ItemId);
-                if ((itemTemplate?.LootQuestId > 0) && (player != null))
+                if (itemTemplate?.LootQuestId > 0 && player != null)
                 {
                     if (!player.Quests.HasQuest(itemTemplate.LootQuestId))
                         continue;
@@ -508,10 +510,11 @@ public class LootPack
     /// <param name="actabilityType"></param>
     /// <param name="taskType"></param>
     /// <param name="generatedList"></param>
-    public bool GiveLootPack(Character character, ActabilityType actabilityType, ItemTaskType taskType, List<(uint itemId, int count, byte grade, uint originalGroup)> generatedList = null)
+    /// <param name="inheritedGrade">Grade to inherit (Optional)</param>
+    public bool GiveLootPack(Character character, ActabilityType actabilityType, ItemTaskType taskType, List<(uint itemId, int count, byte grade, uint originalGroup)> generatedList = null, byte? inheritedGrade = null)
     {
         // If it is not generated yet, generate loot pack info now
-        generatedList ??= GeneratePack(character, actabilityType);
+        generatedList ??= GeneratePack(character, actabilityType, inheritedGrade);
 
         var canAdd = true;
         // First check for room

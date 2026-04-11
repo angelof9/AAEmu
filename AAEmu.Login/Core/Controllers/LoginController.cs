@@ -1,168 +1,224 @@
-﻿using System.Collections.Concurrent;
-using AAEmu.Commons.Utils.DB;
+using System.Collections.Concurrent;
+using System.Net;
+using System.Text.RegularExpressions;
+using AAEmu.Login.Core.Authentication;
 using AAEmu.Login.Core.Network.Connections;
-using AAEmu.Login.Core.Packets.L2C;
+using AAEmu.Login.Core.PacketHandlers.C2L;
 using AAEmu.Login.Core.Packets.L2G;
+using AAEmu.Login.Core.Services;
 using AAEmu.Login.Models;
+using AAEmu.Login.Utils;
 using Microsoft.Extensions.Options;
 using MySql.Data.MySqlClient;
-using NLog;
 
 namespace AAEmu.Login.Core.Controllers;
 
-public class LoginController(IGameController gameController, IOptions<AppConfiguration> appConfig) : ILoginController
+public partial class LoginController(
+    IGameController gameController,
+    IPasswordService passwordService,
+    IOptions<AppConfiguration> appConfig,
+    IOptions<KoreaAuthOptions> koreaOptions,
+    IMySqlConnectionFactory connectionFactory,
+    ILogger<LoginController> logger) : ILoginController
 {
-    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
-
     private readonly bool _autoAccount = appConfig.Value.AutoAccount;
+    private readonly KoreaAuthOptions _koreaOptions = koreaOptions.Value;
 
     private readonly ConcurrentDictionary<GameServerId, ConcurrentDictionary<uint, AccountId>>
         _tokens = []; // gsId, [token, accountId]
 
-    /// <summary>
-    /// Kr Method Auth
-    /// </summary>
-    /// <param name="connection"></param>
-    /// <param name="username"></param>
-    public void Login(LoginConnection connection, string username)
-    {
-        using var connect = MySQL.CreateConnection();
-        using var command = connect.CreateCommand();
-        command.CommandText = "SELECT * FROM users where username=@username";
-        command.Parameters.AddWithValue("@username", username);
-        using var reader = command.ExecuteReader();
-        if (!reader.Read())
-        {
-            connection.SendPacket(new ACLoginDeniedPacket(2));
-            return;
-        }
-
-        // TODO ... validation password
-
-        connection.AccountId = new AccountId(reader.GetUInt32("id"));
-        connection.AccountName = username;
-        connection.LastLogin = DateTime.UtcNow;
-        connection.LastIp = connection.Ip;
-
-        connection.SendPacket(new ACJoinResponsePacket(0, 6));
-        connection.SendPacket(new ACAuthResponsePacket(connection.AccountId, 6));
-
-        reader.Close();
-
-        #region update account
-
-        command.Parameters.Clear();
-        command.CommandText =
-            "UPDATE `users` SET last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
-        command.Parameters.AddWithValue("@id", connection.AccountId.Value);
-        command.Parameters.AddWithValue("@last_ip", connection.LastIp.ToString());
-        command.Parameters.AddWithValue("@last_login", ((DateTimeOffset)connection.LastLogin).ToUnixTimeSeconds());
-        command.Parameters.AddWithValue("@updated_at", ((DateTimeOffset)connection.LastLogin).ToUnixTimeSeconds());
-
-        if (command.ExecuteNonQuery() != 1)
-        {
-            Logger.Warn("Database update failed, error occurred while updating account login IP and time");
-        }
-
-        # endregion
-    }
+    // Allows Unicode letters and digits (any script), plus _ . - @. No control characters or newlines.
+    [GeneratedRegex(@"^[\p{L}\p{Nd}_.\-@]{1,32}$")]
+    private static partial Regex UsernameRegex();
 
     /// <summary>
     /// Eu Method Auth
     /// </summary>
-    /// <param name="connection"></param>
-    /// <param name="username"></param>
-    /// <param name="password"></param>
-    public void Login(LoginConnection connection, string username, ReadOnlySpan<byte> password)
+    /// <param name="username">The username.</param>
+    /// <param name="password">The password sent by the client, with its encoding kind.</param>
+    /// <param name="ip">The client IP address for recording.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<LoginResult> Login(string username, Password password, IPAddress ip,
+        CancellationToken cancellationToken)
     {
-        using var connect = MySQL.CreateConnection();
-        using var command = connect.CreateCommand();
+        await using var connect = connectionFactory.CreateConnection();
+        await using var command = connect.CreateCommand();
         command.CommandText = "SELECT * FROM users where username=@username";
         command.Parameters.AddWithValue("@username", username);
-        using var reader = command.ExecuteReader();
-        if (!reader.Read())
+        await using var reader = command.ExecuteReader();
+        if (!await reader.ReadAsync())
         {
             if (_autoAccount)
             {
-                reader.Close();
-                CreateAndLoginInvalid(connection, username, password, connect);
-            }
-            else
-            {
-                connection.SendPacket(new ACLoginDeniedPacket(2));
+                await reader.CloseAsync();
+                return await CreateAndLoginInvalid(username, password, ip, connect);
             }
 
-            return;
+            return new LoginResult(false, default, LoginDeniedReason.BadAccount);
         }
 
-        var expectedPassword = Convert.FromBase64String(reader.GetString("password"));
-        if (!password.SequenceEqual(expectedPassword))
+        var storedPassword = reader.GetString("password");
+        var storedKoreaChallengeHash = reader.IsDBNull(reader.GetOrdinal("korea_challenge_hash"))
+            ? null
+            : reader.GetString("korea_challenge_hash");
+
+        var verificationResult = passwordService.VerifyPassword(storedPassword, password);
+        if (verificationResult == PasswordVerificationResult.Failed)
         {
-            connection.SendPacket(new ACLoginDeniedPacket(2));
-            return;
+            return new LoginResult(false, default, LoginDeniedReason.BadAccount);
         }
 
         var banned = reader.GetBoolean("banned");
         if (banned)
         {
-            var banReason = (byte)reader.GetUInt32("ban_reason");
-            connection.SendPacket(new ACLoginDeniedPacket(banReason));
-            return;
+            var banReason = (LoginDeniedReason)(byte)reader.GetUInt32("ban_reason");
+            return new LoginResult(false, default, banReason);
         }
 
-        connection.AccountId = new AccountId(reader.GetUInt32("id"));
-        connection.AccountName = username;
-        connection.LastLogin = DateTime.UtcNow;
-        connection.LastIp = connection.Ip;
+        var accountId = new AccountId(reader.GetUInt32("id"));
+        var now = DateTime.UtcNow;
 
-        Logger.Info("{0} connected.", connection.AccountName);
-        connection.SendPacket(new ACJoinResponsePacket(0, 6));
-        connection.SendPacket(new ACAuthResponsePacket(connection.AccountId, 6));
+        logger.LogInformation("{Username} connected.", username.ReplaceLineEndings(" "));
 
-        reader.Close();
+        await reader.CloseAsync();
 
         #region update account
 
-        command.Parameters.Clear();
-        command.CommandText =
-            "UPDATE `users` SET last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
-        command.Parameters.AddWithValue("@id", connection.AccountId.Value);
-        command.Parameters.AddWithValue("@last_ip", connection.LastIp.ToString());
-        command.Parameters.AddWithValue("@last_login", ((DateTimeOffset)connection.LastLogin).ToUnixTimeSeconds());
-        command.Parameters.AddWithValue("@updated_at", ((DateTimeOffset)connection.LastLogin).ToUnixTimeSeconds());
+        // Determine what needs rehashing, which is only possible when we have a plaintext password
+        var rehashPbkdf2 = verificationResult == PasswordVerificationResult.SuccessRehashNeeded
+                           && password.Kind == PasswordKind.Plaintext;
+        var koreaRehashNeeded = _koreaOptions.Enabled
+                                && password.Kind == PasswordKind.Plaintext
+                                && (storedKoreaChallengeHash == null
+                                    || Sha256Crypt.ParseRounds(storedKoreaChallengeHash) != _koreaOptions.Rounds);
 
-        if (command.ExecuteNonQuery() != 1)
+        command.Parameters.Clear();
+
+        if (rehashPbkdf2 && koreaRehashNeeded)
         {
-            Logger.Warn("Database update failed, error occurred while updating account login IP and time");
+            command.CommandText =
+                "UPDATE `users` SET password = @password, korea_challenge_hash = @koreaHash," +
+                " last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
+            command.Parameters.AddWithValue("@password", passwordService.HashForStorage(password));
+            command.Parameters.AddWithValue("@koreaHash",
+                KoreaChallengeCrypt.Compute(password.Value, rounds: _koreaOptions.Rounds));
+        }
+        else if (rehashPbkdf2)
+        {
+            command.CommandText =
+                "UPDATE `users` SET password = @password," +
+                " last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
+            command.Parameters.AddWithValue("@password", passwordService.HashForStorage(password));
+        }
+        else if (koreaRehashNeeded)
+        {
+            command.CommandText =
+                "UPDATE `users` SET korea_challenge_hash = @koreaHash," +
+                " last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
+            command.Parameters.AddWithValue("@koreaHash",
+                KoreaChallengeCrypt.Compute(password.Value, rounds: _koreaOptions.Rounds));
+        }
+        else
+        {
+            command.CommandText =
+                "UPDATE `users` SET last_ip = @last_ip, last_login = @last_login, updated_at = @updated_at WHERE id = @id";
         }
 
-        # endregion
+        command.Parameters.AddWithValue("@id", accountId.Value);
+        command.Parameters.AddWithValue("@last_ip", ip.ToString());
+        command.Parameters.AddWithValue("@last_login", ((DateTimeOffset)now).ToUnixTimeSeconds());
+        command.Parameters.AddWithValue("@updated_at", ((DateTimeOffset)now).ToUnixTimeSeconds());
+
+        if (await command.ExecuteNonQueryAsync() != 1)
+        {
+            logger.LogWarning("Database update failed, error occurred while updating account login IP and time");
+        }
+
+        #endregion
+
+        return new LoginResult(true, accountId, default);
     }
 
-    public void CreateAndLoginInvalid(LoginConnection connection, string username, ReadOnlySpan<byte> password,
-        MySqlConnection connect)
+    public async Task<KoreaAuthInfo?> GetKoreaAuthInfoAsync(string username, CancellationToken cancellationToken)
     {
-        var pass = Convert.ToBase64String(password);
-
-        using var command = connect.CreateCommand();
+        await using var connect = connectionFactory.CreateConnection();
+        await using var command = connect.CreateCommand();
         command.CommandText =
-            "INSERT into users (username, password, email, last_ip, last_login, created_at, updated_at) VALUES (@username, @password, @email, @last_ip, @last_login, @created_at, @updated_at)";
+            "SELECT id, korea_challenge_hash FROM users WHERE username = @username";
         command.Parameters.AddWithValue("@username", username);
-        command.Parameters.AddWithValue("@password", pass);
+        await using var reader = command.ExecuteReader();
+
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+
+        var accountId = new AccountId(reader.GetUInt32("id"));
+
+        if (reader.IsDBNull(reader.GetOrdinal("korea_challenge_hash")))
+            return null;
+
+        var stored = reader.GetString("korea_challenge_hash");
+        var rawHash = new byte[32];
+        var (rounds, salt) = Sha256Crypt.Parse(stored, rawHash);
+        return new KoreaAuthInfo(accountId, rawHash.AsMemory(), salt, rounds);
+    }
+
+    public async Task<(bool Banned, LoginDeniedReason BanReason)> CheckBanStatusAsync(
+        AccountId accountId, CancellationToken cancellationToken)
+    {
+        await using var connect = connectionFactory.CreateConnection();
+        await using var command = connect.CreateCommand();
+        command.CommandText = "SELECT banned, ban_reason FROM users WHERE id = @accountId";
+        command.Parameters.AddWithValue("@accountId", accountId.Value);
+        await using var reader = command.ExecuteReader();
+
+        if (!await reader.ReadAsync(cancellationToken))
+            return (false, default);
+
+        var banned = reader.GetBoolean("banned");
+        var banReason = banned ? (LoginDeniedReason)(byte)reader.GetUInt32("ban_reason") : default;
+        return (banned, banReason);
+    }
+
+    private async Task<LoginResult> CreateAndLoginInvalid(string username, Password password,
+        IPAddress clientIp, MySqlConnection connection)
+    {
+        if (!UsernameRegex().IsMatch(username))
+            return new LoginResult(false, default, LoginDeniedReason.BadAccount);
+
+        var passwordHash = passwordService.HashForStorage(password);
+
+        await using var command = connection.CreateCommand();
+
+        if (_koreaOptions.Enabled && password.Kind == PasswordKind.Plaintext)
+        {
+            var koreaHash = KoreaChallengeCrypt.Compute(password.Value, rounds: _koreaOptions.Rounds);
+            command.CommandText =
+                "INSERT into users (username, password, korea_challenge_hash, email, last_ip, last_login, created_at, updated_at)" +
+                " VALUES (@username, @password, @koreaHash, @email, @last_ip, @last_login, @created_at, @updated_at)";
+            command.Parameters.AddWithValue("@koreaHash", koreaHash);
+        }
+        else
+        {
+            command.CommandText =
+                "INSERT into users (username, password, email, last_ip, last_login, created_at, updated_at)" +
+                " VALUES (@username, @password, @email, @last_ip, @last_login, @created_at, @updated_at)";
+        }
+
+        command.Parameters.AddWithValue("@username", username);
+        command.Parameters.AddWithValue("@password", passwordHash);
         command.Parameters.AddWithValue("@email", "");
-        command.Parameters.AddWithValue("@last_ip", connection.Ip.ToString());
+        command.Parameters.AddWithValue("@last_ip", clientIp.ToString());
         command.Parameters.AddWithValue("@last_login", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds());
         command.Parameters.AddWithValue("@created_at", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds());
         command.Parameters.AddWithValue("@updated_at", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds());
 
-        if (command.ExecuteNonQuery() != 1)
+        if (await command.ExecuteNonQueryAsync() != 1)
         {
-            connection.SendPacket(new ACLoginDeniedPacket(2));
-            return;
+            return new LoginResult(false, default, LoginDeniedReason.LoginUnknown);
         }
 
-        Logger.Debug("Created account from invalid username login with value:" + username);
-        Login(connection, username, password);
+        logger.LogDebug("Created account from invalid username login with value {Username}", username);
+        return await Login(username, password, clientIp, CancellationToken.None);
     }
 
     public void AddReconnectionToken(InternalConnection connection, GameServerId gsId, AccountId accountId, uint token)
@@ -172,7 +228,7 @@ public class LoginController(IGameController gameController, IOptions<AppConfigu
         connection.SendPacket(new LGPlayerReconnectPacket(token));
     }
 
-    public void Reconnect(LoginConnection connection, GameServerId gsId, AccountId accountId, uint token)
+    public Task<ReconnectResult> Reconnect(GameServerId gsId, AccountId accountId, uint token)
     {
         if (!_tokens.ContainsKey(gsId))
         {
@@ -181,25 +237,22 @@ public class LoginController(IGameController gameController, IOptions<AppConfigu
             else
             {
                 // TODO ...
-                return;
+                return Task.FromResult(new ReconnectResult(false, default));
             }
         }
 
         if (!_tokens[gsId].TryGetValue(token, out var value))
         {
             // TODO ...
-            return;
+            return Task.FromResult(new ReconnectResult(false, default));
         }
 
         if (value == accountId)
         {
-            connection.AccountId = accountId;
-            connection.SendPacket(new ACJoinResponsePacket(0, 6));
-            connection.SendPacket(new ACAuthResponsePacket(connection.AccountId, 6));
+            return Task.FromResult(new ReconnectResult(true, accountId));
         }
-        else
-        {
-            // TODO ...
-        }
+
+        // TODO ...
+        return Task.FromResult(new ReconnectResult(false, default));
     }
 }

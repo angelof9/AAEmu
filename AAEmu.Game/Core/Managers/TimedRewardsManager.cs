@@ -9,7 +9,7 @@ namespace AAEmu.Game.Core.Managers;
 /// <summary>
 /// For timed adding credits and loyalty
 /// </summary>
-public class TimedRewardsManager : Singleton<TimedRewardsManager>
+public class TimedRewardsManager : Singleton<TimedRewardsManager>, ITimedRewardsManager
 {
     private const short MaxLabor = 2000;
     private const short MaxLaborPremium = 5000;
@@ -51,7 +51,7 @@ public class TimedRewardsManager : Singleton<TimedRewardsManager>
 
     public void DoTick()
     {
-        if ((AppConfiguration.Instance.Credits.TickMinutes <= 0) && (AppConfiguration.Instance.Loyalty.TickMinutes <= 0))
+        if (AppConfiguration.Instance.Credits.TickMinutes <= 0 && AppConfiguration.Instance.Loyalty.TickMinutes <= 0)
             return;
 
         var connections = GameConnectionTable.Instance.GetConnections();

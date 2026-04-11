@@ -21,7 +21,7 @@ public class Buff
 {
     protected static Logger Logger = LogManager.GetCurrentClassLogger();
 
-    private object _lock = new();
+    private readonly object _lock = new();
     private int _count;
 
     public uint Index { get; set; }
@@ -79,10 +79,10 @@ public class Buff
                 _count = (int)(time / Tick + 0.5f + 1);
             else
                 _count = -1;
-            EffectTaskManager.AddDispelTask(this, Tick);
+            EffectTaskManager.Instance.AddDispelTask(this, Tick);
         }
         else
-            EffectTaskManager.AddDispelTask(this, GetTimeLeft());
+            EffectTaskManager.Instance.AddDispelTask(this, GetTimeLeft());
     }
 
     public void ScheduleEffect(bool replace)
@@ -112,10 +112,10 @@ public class Buff
                             _count = (int)(time / Tick + 0.5f + 1);
                         else
                             _count = -1;
-                        EffectTaskManager.AddDispelTask(this, Tick);
+                        EffectTaskManager.Instance.AddDispelTask(this, Tick);
                     }
                     else
-                        EffectTaskManager.AddDispelTask(this, GetTimeLeft());
+                        EffectTaskManager.Instance.AddDispelTask(this, GetTimeLeft());
 
                     if (Template.FactionId > 0 && Owner is Unit owner)
                     {

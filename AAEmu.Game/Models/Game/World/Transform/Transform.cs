@@ -234,7 +234,7 @@ public class Transform : IDisposable
     /// <returns></returns>
     public WorldSpawnPosition CloneAsSpawnPosition()
     {
-        return new WorldSpawnPosition()
+        return new WorldSpawnPosition
         {
             WorldId = this.WorldId,
             ZoneId = this.ZoneId,
@@ -287,7 +287,7 @@ public class Transform : IDisposable
         lock (_lock)
         {
 
-            if ((parent == null) || (!parent.Equals(_parentTransform)))
+            if (parent == null || !parent.Equals(_parentTransform))
             {
                 if (_parentTransform != null)
                     _parentTransform.InternalDetachChild(this);
@@ -322,7 +322,7 @@ public class Transform : IDisposable
                 _parentTransform = parent;
                 _parentTransform?.InternalAttachChild(this);
 
-                if ((_owningObject is Character aPlayer))
+                if (_owningObject is Character aPlayer)
                     aPlayer.SendDebugMessage($"NewPos: {ToFullString(true, true)}");
             }
         }
@@ -335,9 +335,12 @@ public class Transform : IDisposable
             _children.Add(child);
 
             var inverseParentRotation = Quaternion.Inverse(World.ToQuaternion());
+            var parentScale = _owningObject is BaseUnit u ? u.Scale : 1f;
 
             // NLObP version of transformations
-            child.Local.Position = Vector3.Transform(child.Local.Position - World.Position, inverseParentRotation);
+            // Convert current child world offset into local space and unscale it.
+            child.Local.Position =
+                Vector3.Transform(child.Local.Position - World.Position, inverseParentRotation) / parentScale;
 
             // Child has no parent, so child.Local == child.World
             var childWorldRotation = child.Local.ToQuaternion();
@@ -355,9 +358,11 @@ public class Transform : IDisposable
         if (_children.Remove(child))
         {
             var parentRotation = World.ToQuaternion();
+            var parentScale = _owningObject is BaseUnit u ? u.Scale : 1f;
 
             // NLObP version of transformations
-            child.Local.Position = Vector3.Transform(child.Local.Position, parentRotation) + World.Position;
+            // When detaching, convert local (unscaled) back into world space including parent scale.
+            child.Local.Position = Vector3.Transform(child.Local.Position * parentScale, parentRotation) + World.Position;
 
             var childLocalRotation = child.Local.ToQuaternion();
             // Transform the child's local rotation relative to the parent to world space, using the parent's rotation
@@ -381,7 +386,9 @@ public class Transform : IDisposable
 
         // Use parent rotation to translate child coordinates
         var parentQuatRotation = res.ToQuaternion();
-        res.Translate(Vector3.Transform(Local.Position, parentQuatRotation));
+        var parentScale = _parentTransform.GameObject is BaseUnit u ? u.Scale : 1f;
+        // Local.Position is stored unscaled; scale it by parent's scale when composing world coordinates.
+        res.Translate(Vector3.Transform(Local.Position * parentScale, parentQuatRotation));
 
         // Child has no parent, so child.Local == child.World
         var localRotation = Local.ToQuaternion();
@@ -576,7 +583,7 @@ public class Transform : IDisposable
         var chatColorRestore = chatFormatted ? "|r" : "";
         var chatLineFeed = chatFormatted ? "\n" : "";
         var res = "[i" + (_owningObject?.ParentWorld?.Id.ToString() ?? "?") + "] ";
-        if (isFirstInList && ((_parentTransform != null) || (_stickyParentTransform != null)))
+        if (isFirstInList && (_parentTransform != null || _stickyParentTransform != null))
             res += "[" + chatColorWhite + World + chatColorRestore + "] " + chatLineFeed + "=> ";
         res += Local.ToString();
         if (_parentTransform != null)
@@ -617,13 +624,13 @@ public class Transform : IDisposable
     private bool AttachStickyTransform(Transform stickyChild)
     {
         // Null-check
-        if ((stickyChild == null) || (stickyChild.GameObject == null))
+        if (stickyChild == null || stickyChild.GameObject == null)
             return false;
         // Check if already there
         if (StickyChildren.Contains(stickyChild))
             return false;
         // Check if in the same world
-        if ((stickyChild.WorldId != this.WorldId) || (stickyChild.InstanceId != this.InstanceId))
+        if (stickyChild.WorldId != this.WorldId || stickyChild.InstanceId != this.InstanceId)
             return false;
         StickyChildren.Add(stickyChild);
         stickyChild._stickyParentTransform = this;
@@ -652,7 +659,7 @@ public class Transform : IDisposable
 
             // var oldStickyParent = _stickyParentTransform;
             // Detach from previous sticky parent if needed 
-            if ((_stickyParentTransform != null) && (!_stickyParentTransform.Equals(stickyParent)))
+            if (_stickyParentTransform != null && !_stickyParentTransform.Equals(stickyParent))
                 _stickyParentTransform.DetachStickyTransform(this);
 
             /*
@@ -682,13 +689,12 @@ public class Transform : IDisposable
             }
             */
 
-            // Attach to new parent if needed
-            if (stickyParent != null)
-                stickyParent.AttachStickyTransform(this);
+            // Treat sticky parent as a real parent for correct World composition.
+            // This makes Transform.World depend on the full parent tree.
+            _stickyParentTransform = stickyParent;
         }
 
-        // Attach to Stick target's parent if it has one
-        Parent = stickyParent?.Parent;
+        Parent = stickyParent;
     }
 
     public bool ToggleDebugTracker(Character player)

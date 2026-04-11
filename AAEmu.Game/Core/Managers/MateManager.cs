@@ -145,7 +145,7 @@ public class MateManager(WorldInstance parentWorldInstance)
         if (mateInfo.Passengers.TryGetValue(attachPoint, out var seatInfo))
         {
             // If first seat, check if it's the owner
-            if ((attachPoint == AttachPointKind.Driver) && (mateInfo.OwnerObjId != character.ObjId))
+            if (attachPoint == AttachPointKind.Driver && mateInfo.OwnerObjId != character.ObjId)
             {
                 Logger.Warn($"MountMate. Non-owner {character.Name} ({character.ObjId}) tried to take the first seat on mount {mateInfo.Name} ({mateInfo.ObjId})");
                 return;
@@ -223,7 +223,7 @@ public class MateManager(WorldInstance parentWorldInstance)
         }
         else
         {
-            Logger.Warn($"UnMountMate. No valid seat entry, mountTlId: {mateInfo.TlId}, characterObjId: {0}, attachPoint: {attachPoint}, reason: {reason}");
+            Logger.Debug($"UnMountMate. No valid seat entry, mountTlId: {mateInfo.TlId}, characterObjId: {0}, attachPoint: {attachPoint}, reason: {reason}");
         }
     }
 
@@ -238,7 +238,7 @@ public class MateManager(WorldInstance parentWorldInstance)
         // Get or set entry for player objId
         if (!_activeMates.TryGetValue(owner.Id, out var activeMateList))
         {
-            activeMateList = new List<Mate>();
+            activeMateList = [];
             _activeMates.Add(owner.Id, activeMateList);
         }
 

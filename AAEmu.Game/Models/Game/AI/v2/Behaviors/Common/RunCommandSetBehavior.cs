@@ -29,7 +29,7 @@ public class RunCommandSetBehavior : BaseCombatBehavior
         }
 
         // If there are commands in the AI Command queue, execute those first
-        if ((Ai.AiCurrentCommand != null) || (Ai.AiCommandsQueue.Count > 0))
+        if (Ai.AiCurrentCommand != null || Ai.AiCommandsQueue.Count > 0)
         {
             if (Ai.AiCurrentCommand == null)
             {
@@ -83,7 +83,7 @@ public class RunCommandSetBehavior : BaseCombatBehavior
                 Ai.LoadAiPathPoints(Ai.AiFileName, aiCommand.Param1 == 1);
                 if (aiCommand.Param1 == 1)
                 {
-                    Ai.PathHandler.AiPathPointsRemaining.Enqueue(new AiPathPoint() { Position = Vector3.Zero, Action = AiPathPointAction.ReturnToCommandSet, Param = string.Empty });
+                    Ai.PathHandler.AiPathPointsRemaining.Enqueue(new AiPathPoint { Position = Vector3.Zero, Action = AiPathPointAction.ReturnToCommandSet, Param = string.Empty });
                 }
                 Ai.GoToFollowPath();
                 if (aiCommand.Param1 == 1)
@@ -98,10 +98,11 @@ public class RunCommandSetBehavior : BaseCombatBehavior
                 break;
             case AiCommandCategory.UseSkill:
                 Ai.AiSkillId = aiCommand.Param1;
+                var owner = Ai.Owner; // capture once to avoid race with concurrent unit despawn
                 var skillTemplate = SkillManager.Instance.GetSkillTemplate(Ai.AiSkillId);
-                if (skillTemplate != null && Ai.Owner.UseSkill(Ai.AiSkillId, Ai.Owner.CurrentTarget as Unit ?? Ai.Owner) == SkillResult.Success)
+                if (owner != null && skillTemplate != null && owner.UseSkill(Ai.AiSkillId, owner.CurrentTarget as Unit ?? owner) == SkillResult.Success)
                 {
-                    var coolDown = SkillManager.GetAttackDelay(skillTemplate, Ai.Owner, false, 0.0);
+                    var coolDown = SkillManager.GetAttackDelay(skillTemplate, owner, false, 0.0);
                     Ai.AiCurrentCommandRunTime = TimeSpan.FromMilliseconds(coolDown);
                 }
                 break;

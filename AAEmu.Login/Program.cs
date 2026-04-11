@@ -1,17 +1,24 @@
-﻿using System.Reflection;
+﻿using System.Configuration;
+using System.Net;
+using System.Reflection;
 using AAEmu.Commons.IO;
+using AAEmu.Login.Core.Authentication;
 using AAEmu.Login.Core.Controllers;
-using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Network.Internal;
 using AAEmu.Login.Core.Network.Login;
 using AAEmu.Login.Core.PacketHandlers;
+using AAEmu.Login.Core.Services;
 using AAEmu.Login.Models;
 using AAEmu.Login.Utils;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using MySql.Data.MySqlClient;
 using NLog;
 using NLog.Config;
+using NLog.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using OSVersionExtension;
 
 namespace AAEmu.Login;
@@ -32,19 +39,80 @@ public static class Program
 
         LoadConfiguration();
 
-        var builder = Host.CreateApplicationBuilder(args);
+        var builder = WebApplication.CreateSlimBuilder(args);
+
+        builder.WebHost.ConfigureKestrel((context, options) =>
+        {
+            if (context.Configuration.GetRequiredSection(PublicNetworkConfig.ConfigurationSectionName)
+                    .Get<PublicNetworkConfig>() is not { } publicNetworkConfig)
+            {
+                throw new ConfigurationErrorsException("Could not load public network configuration");
+            }
+
+            // Set up Kestrel to listen on the public network interface for incoming connections from game clients
+            options.Listen(publicNetworkConfig.Host == "*"
+                    ? IPAddress.Any
+                    : IPAddress.Parse(publicNetworkConfig.Host),
+                publicNetworkConfig.Port,
+                opts => opts.UseConnectionHandler<LoginConnectionHandler>());
+
+            // Listen on any HTTP URLs assigned by the orchestrator (e.g. Aspire via ASPNETCORE_URLS)
+            var urls = context.Configuration[WebHostDefaults.ServerUrlsKey];
+            if (urls is not null)
+            {
+                foreach (var url in urls.Split(';'))
+                {
+                    var uri = new Uri(url);
+                    options.ListenAnyIP(uri.Port);
+                }
+            }
+        });
 
         builder.Configuration
             .AddJsonFile(Path.Combine(FileManager.AppPath, "Config.json"), optional: true, reloadOnChange: true)
+            .AddJsonFile(Path.Combine(FileManager.AppPath, "Config.Local.json"), optional: true, reloadOnChange: true)
             .AddUserSecrets<LoginService>()
             .AddEnvironmentVariables()
             .AddCommandLine(args);
 
+        var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+
         // Configure services
+        builder.Logging.ClearProviders()
+            .AddNLog();
+
+        if (otlpEndpoint is not null)
+        {
+            builder.Services.AddOpenTelemetry()
+                .WithLogging(null, options =>
+                {
+                    options.IncludeFormattedMessage = true;
+                    options.IncludeScopes = true;
+                })
+                .WithTracing(tracing => tracing
+                    .AddAspNetCoreInstrumentation(options =>
+                        options.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/health")))
+                .WithMetrics(metrics => metrics
+                    .AddAspNetCoreInstrumentation())
+                .UseOtlpExporter();
+        }
         builder.Services.AddOptions();
         builder.Services.AddOptionsWithValidateOnStart<AppConfiguration>()
             .BindConfiguration("")
             .ValidateDataAnnotations();
+        builder.Services.AddOptionsWithValidateOnStart<DBConnectionsConfig>()
+            .BindConfiguration(DBConnectionsConfig.ConfigurationSectionName)
+            .ValidateDataAnnotations();
+        builder.Services.AddOptionsWithValidateOnStart<InternalNetworkConfig>()
+            .BindConfiguration(InternalNetworkConfig.ConfigurationSectionName)
+            .ValidateDataAnnotations();
+        builder.Services.AddOptionsWithValidateOnStart<PublicNetworkConfig>()
+            .BindConfiguration(PublicNetworkConfig.ConfigurationSectionName)
+            .ValidateDataAnnotations();
+
+        builder.Services.AddSingleton<IMySqlConnectionFactory, MySqlConnectionFactory>();
+        builder.Services.AddTransient<MySqlConnection>(sp =>
+            sp.GetRequiredService<IMySqlConnectionFactory>().CreateConnection());
 
         builder.Services.AddHostedService<MySqlInitializer>();
         builder.Services.AddHostedService<LoginService>();
@@ -53,17 +121,22 @@ public static class Program
         builder.Services.AddSingleton<ILoginController, LoginController>();
         builder.Services.AddSingleton<IRequestController, RequestController>();
 
-        builder.Services.AddSingleton<IInternalProtocolHandler, InternalProtocolHandler>();
-        builder.Services.AddSingleton<IInternalConnectionTable, InternalConnectionTable>();
-        builder.Services.AddSingleton<IInternalNetwork, InternalNetwork>();
-        builder.Services.AddSingleton<ILoginProtocolHandler, LoginProtocolHandler>();
-        builder.Services.AddSingleton<ILoginConnectionTable, LoginConnectionTable>();
-        builder.Services.AddSingleton<ILoginNetwork, LoginNetwork>();
+        builder.Services.AddPasswordAuth();
+        builder.Services.AddKoreaAuth();
+
+        builder.Services.AddInternalNetwork();
+        builder.Services.AddLoginNetwork();
 
         builder.Services.AddInternalPacketHandlers();
         builder.Services.AddLoginPacketHandlers();
 
+        builder.Services.AddHealthChecks();
+
         var app = builder.Build();
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+        app.MapHealthChecks("/health/ready");
+
         await app.RunAsync();
     }
 
@@ -99,7 +172,7 @@ public static class Program
             $"Running as {(Environment.Is64BitProcess ? "64" : "32")}-bits on {(Environment.Is64BitOperatingSystem ? "64" : "32")}-bits {GetOsName()} ({Environment.OSVersion})");
         if (!Environment.Is64BitProcess)
         {
-            Logger.Warn($"Running in 32-bits mode is not recommended to do memory constraints");
+            Logger.Warn($"Running in 32-bits mode is not recommended due to memory constraints");
         }
     }
 }

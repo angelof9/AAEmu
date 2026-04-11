@@ -8,7 +8,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class FormulaManager : Singleton<FormulaManager>
+public class FormulaManager : Singleton<FormulaManager>, IFormulaManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private static bool _loaded = false;
@@ -64,7 +64,7 @@ public class FormulaManager : Singleton<FormulaManager>
             ExecutionMode = ExecutionMode.Compiled,
             CultureInfo = CultureInfo.InvariantCulture,
         });
-        CalculationEngine.AddFunction("clamp", (a, b, c) => a < b ? b : (a > c ? c : a));
+        CalculationEngine.AddFunction("clamp", (a, b, c) => a < b ? b : a > c ? c : a);
         CalculationEngine.AddFunction("if_negative", (a, b, c) => a < 0 ? b : c);
         CalculationEngine.AddFunction("if_positive", (a, b, c) => a > 0 ? b : c);
         CalculationEngine.AddFunction("if_zero", (a, b, c) => a == 0 ? b : c);

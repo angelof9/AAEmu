@@ -1,14 +1,20 @@
+using AAEmu.Login.Core.Authentication;
 using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Packets.C2L;
-using AAEmu.Login.Core.Packets.L2C;
 
 namespace AAEmu.Login.Core.PacketHandlers.C2L;
 
-public class CAChallengeResponsePacketHandler
-    : ILoginPacketHandler<CAChallengeResponsePacket>
+/// <summary>
+/// Handles the <see cref="CAChallengeResponsePacket"/> (V1 Korea challenge response).
+/// </summary>
+/// <seealso cref="AAEmu.Login.Core.Packets.L2C.ACChallengePacket"/>
+public class CAChallengeResponsePacketHandler : ILoginPacketHandler<CAChallengeResponsePacket>
 {
-    public void Execute(CAChallengeResponsePacket packet, LoginConnection connection)
+    public async Task Execute(CAChallengeResponsePacket packet, ILoginSession session,
+        CancellationToken cancellationToken)
     {
-        connection.SendPacket(new ACLoginDeniedPacket(3));
+        await session.ContinueAuthAsync<IChallengeAuthFlow>(
+            flow => flow.ContinueAsync(session.Client, packet.Ch, packet.Pw, cancellationToken),
+            cancellationToken);
     }
 }

@@ -72,7 +72,7 @@ public class GimmickManager(WorldInstance parentWorld)
     public void AddActiveGimmick(Gimmick gimmick)
     {
         // Attach movement handlers based on settings
-        if ((gimmick.TemplateId == 0) && (gimmick.EntityGuid > 0))
+        if (gimmick.TemplateId == 0 && gimmick.EntityGuid > 0)
         {
             // Elevators defined in gimmick_spawns.json
             gimmick.MovementHandler = new GimmickMovementElevator(gimmick);
@@ -86,12 +86,14 @@ public class GimmickManager(WorldInstance parentWorld)
         }
 
         gimmick.Time = (uint)(DateTime.UtcNow - DateTime.UtcNow.Date).TotalMilliseconds;
-        _activeGimmicks.TryAdd(gimmick.ObjId, gimmick);
+        lock (_activeGimmicks)
+            _activeGimmicks.TryAdd(gimmick.ObjId, gimmick);
     }
 
     public void RemoveActiveGimmick(Gimmick gimmick)
     {
-        _activeGimmicks.Remove(gimmick.ObjId);
+        lock (_activeGimmicks)
+            _activeGimmicks.Remove(gimmick.ObjId);
     }
 
     /// <summary>

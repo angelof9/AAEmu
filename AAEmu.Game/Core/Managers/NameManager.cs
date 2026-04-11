@@ -4,18 +4,18 @@ using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Models;
 using AAEmu.Game.Models.StaticValues;
+using Microsoft.Extensions.Options;
 using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public partial class NameManager : Singleton<NameManager>
+public partial class NameManager(Lazy<ICharacterManager> characterManager = null, IOptions<AppConfiguration> options = null) : Singleton<NameManager>, INameManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
-    private CharacterManager _characterManager;
     private Regex _characterNameRegex;
-    private Dictionary<uint, string> _characterIds;
-    private Dictionary<string, uint> _characterNames;
-    private Dictionary<uint, uint> _characterAccounts;
+    private Dictionary<uint, string> _characterIds = [];
+    private Dictionary<string, uint> _characterNames = [];
+    private Dictionary<uint, uint> _characterAccounts = [];
 
     public string GetCharacterName(uint characterId)
         => _characterIds.TryGetValue(characterId, out var characterName)
@@ -32,28 +32,18 @@ public partial class NameManager : Singleton<NameManager>
         ? accountId
         : 0;
 
-    public NameManager() : this(null)
-    {
-    }
+    public NameManager() : this(null, null) { }
 
-    public NameManager(CharacterManager characterManager = null)
-    {
-        _characterIds = [];
-        _characterNames = [];
-        _characterAccounts = [];
-        _characterManager = characterManager ?? CharacterManager.Instance;
-    }
-
-    [GeneratedRegex("^[a-zA-Z0-9а-яА-Я]{1,18}$")]
+    private const string DefaultCharacterNameRegexPattern = "^[a-zA-Z0-9а-яА-Я]{1,18}$";
+    [GeneratedRegex(DefaultCharacterNameRegexPattern)]
     private static partial Regex DefaultCharacterNameRegex();
 
     public void Load()
     {
-        const string DefaultCharacterNameRegex = "^[a-zA-Z0-9а-яА-Я]{1,18}$";
-        if (AppConfiguration.Instance.CharacterNameRegex is not null
-            && AppConfiguration.Instance.CharacterNameRegex != DefaultCharacterNameRegex)
+        if (options?.Value.CharacterNameRegex is { } characterNameRegex &&
+            characterNameRegex != DefaultCharacterNameRegexPattern)
         {
-            _characterNameRegex = new Regex(AppConfiguration.Instance.CharacterNameRegex, RegexOptions.Compiled);
+            _characterNameRegex = new Regex(characterNameRegex, RegexOptions.Compiled);
         }
 
         using (var connection = MySQL.CreateConnection())
@@ -94,11 +84,10 @@ public partial class NameManager : Singleton<NameManager>
         Dictionary<string, uint> characterNames,
         Dictionary<uint, uint> characterAccounts)
     {
-        const string DefaultCharacterNameRegex = "^[a-zA-Z0-9а-яА-Я]{1,18}$";
-        if (AppConfiguration.Instance.CharacterNameRegex is not null
-            && AppConfiguration.Instance.CharacterNameRegex != DefaultCharacterNameRegex)
+        if (options?.Value.CharacterNameRegex is { } characterNameRegex &&
+            characterNameRegex != DefaultCharacterNameRegexPattern)
         {
-            _characterNameRegex = new Regex(AppConfiguration.Instance.CharacterNameRegex, RegexOptions.Compiled);
+            _characterNameRegex = new Regex(characterNameRegex, RegexOptions.Compiled);
         }
 
         _characterIds = characterIds;
@@ -110,7 +99,7 @@ public partial class NameManager : Singleton<NameManager>
     {
         if (_characterNames.TryGetValue(name, out var existingId))
         {
-            if (_characterManager.IsCharacterPendingDeletion(name))
+            if (characterManager?.Value.IsCharacterPendingDeletion(name) == true)
                 return CharacterCreateError.Failed;
 
             return CharacterCreateError.NameAlreadyExists;
@@ -142,7 +131,7 @@ public partial class NameManager : Singleton<NameManager>
 
         if (!_characterNames.TryAdd(normalizedName, characterId))
         {
-            uint oldId = _characterNames.GetValueOrDefault(normalizedName);
+            var oldId = _characterNames.GetValueOrDefault(normalizedName);
             if (characterId != oldId)
                 Logger.Error($"AddCharacterName, failed to register id for {name} ({characterId}), Account {accountId}, OldId {oldId}");
         }

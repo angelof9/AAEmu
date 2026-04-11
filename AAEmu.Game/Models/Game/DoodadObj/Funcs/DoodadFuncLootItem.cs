@@ -1,5 +1,4 @@
-﻿using AAEmu.Game.Core.Managers;
-using AAEmu.Commons.Utils;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Templates;
 using AAEmu.Game.Models.Game.Items;
@@ -12,6 +11,7 @@ namespace AAEmu.Game.Models.Game.DoodadObj.Funcs;
 public class DoodadFuncLootItem : DoodadFuncTemplate
 {
     // doodad_funcs
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public WorldInteractionType WorldInteractionId { get; set; }
     public uint ItemId { get; init; }
     public int CountMin { get; init; }
@@ -23,9 +23,9 @@ public class DoodadFuncLootItem : DoodadFuncTemplate
     public override void Use(BaseUnit caster, Doodad owner, uint skillId, int nextPhase = 0)
     {
         if (caster is Character)
-            Logger.Debug("DoodadFuncLootItem: skillId {0}, nextPhase {1},  ItemId {2}, CountMin {3}, CountMax {4},  Percent {5}, RemainTime {6}, GroupId {7}", skillId, nextPhase, ItemId, CountMin, CountMax, Percent, RemainTime, GroupId);
+            Logger.Debug($"DoodadFuncLootItem: skillId {skillId}, nextPhase {nextPhase},  ItemId {ItemId}, CountMin {CountMin}, CountMax {CountMax},  Percent {Percent}, RemainTime {RemainTime}, GroupId {GroupId}");
         else
-            Logger.Trace("DoodadFuncLootItem: skillId {0}, nextPhase {1},  ItemId {2}, CountMin {3}, CountMax {4},  Percent {5}, RemainTime {6}, GroupId {7}", skillId, nextPhase, ItemId, CountMin, CountMax, Percent, RemainTime, GroupId);
+            Logger.Trace($"DoodadFuncLootItem: skillId {skillId}, nextPhase {nextPhase},  ItemId {ItemId}, CountMin {CountMin}, CountMax {CountMax},  Percent {Percent}, RemainTime {RemainTime}, GroupId {GroupId}");
 
         var character = (Character)caster;
         var res = true;
@@ -63,6 +63,7 @@ public class DoodadFuncLootItem : DoodadFuncTemplate
         if (res == false)
             character.SendErrorMessage(ErrorMessageType.BagInvalidItem);
 
-        owner.ToNextPhase = true;
+        // Move to next phase only when loot was actually granted.
+        owner.ToNextPhase = res;
     }
 }

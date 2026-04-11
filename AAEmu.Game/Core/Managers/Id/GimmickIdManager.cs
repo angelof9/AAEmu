@@ -1,8 +1,11 @@
-﻿using AAEmu.Game.Utils;
+using AAEmu.Commons.Utils;
+using AAEmu.Game.Utils;
+
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AAEmu.Game.Core.Managers.Id;
 
-public class GimmickIdManager : IdManager
+public class GimmickIdManager() : IdManager("GimmickIdManager", FirstId, LastId, ObjTables, Exclude), IGimmickIdManager
 {
     private static GimmickIdManager _instance;
     private const uint FirstId = 0x0001;
@@ -10,9 +13,6 @@ public class GimmickIdManager : IdManager
     private static readonly uint[] Exclude = [];
     private static readonly string[,] ObjTables = { { } };
 
-    public static GimmickIdManager Instance => _instance ?? (_instance = new GimmickIdManager());
-
-    public GimmickIdManager() : base("GimmickIdManager", FirstId, LastId, ObjTables, Exclude)
-    {
-    }
+    public static GimmickIdManager Instance =>
+        _instance ??= SingletonContainer.ServiceProvider?.GetService<GimmickIdManager>() ?? new GimmickIdManager();
 }

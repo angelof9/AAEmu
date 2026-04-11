@@ -1,8 +1,9 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
+
+using AAEmu.Commons.Utils;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Commons.Utils.Updater;
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.Stream;
 using AAEmu.Game.Core.Managers.UnitManagers;
@@ -25,8 +26,19 @@ namespace AAEmu.Game;
 public sealed class GameService : IHostedService, IDisposable
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
+    private static TimeProvider s_timeProvider = TimeProvider.System;
     public static DateTime StartTime { get; private set; } = DateTime.UtcNow;
-    public static TimeSpan TimeSinceStart => DateTime.UtcNow.Subtract(StartTime);
+    public static TimeSpan TimeSinceStart => s_timeProvider.GetUtcNow().UtcDateTime.Subtract(StartTime);
+
+    private readonly ManagerOrchestrator _orchestrator;
+
+    public GameService(IServiceProvider serviceProvider, ManagerOrchestrator orchestrator, TimeProvider timeProvider)
+    {
+        SingletonContainer.ServiceProvider = serviceProvider;
+        _orchestrator = orchestrator;
+        s_timeProvider = timeProvider;
+        StartTime = timeProvider.GetUtcNow().UtcDateTime;
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -35,7 +47,8 @@ public sealed class GameService : IHostedService, IDisposable
         // Check for updates
         using (var connection = MySQL.CreateConnection())
         {
-            if (!MySqlDatabaseUpdater.Run(connection, "aaemu_game", AppConfiguration.Instance.Connections.MySQLProvider.Database))
+            if (!MySqlDatabaseUpdater.Run(connection, "aaemu_game", AppConfiguration.Instance.Connections.MySQLProvider.Database,
+                    AppConfiguration.Instance.Connections.AutoApplyUpdates))
             {
                 Logger.Fatal("Failed to update database!");
                 Logger.Fatal("Press Ctrl+C to quit");
@@ -52,108 +65,22 @@ public sealed class GameService : IHostedService, IDisposable
         }
 
         var stopWatch = new Stopwatch();
-
         stopWatch.Start();
 
-        // Ticks and Tasks
-        TickManager.Instance.Initialize();
-        TaskIdManager.Instance.Initialize();
-        TaskManager.Instance.Initialize();
+        // --- ID managers ---
+        // All ID managers implement ILoadable and are handled by the orchestrator in Stage 2.
+        // SkillTlIdManager.Instance.Initialize(); // static class, not migrated
 
-        // World
-        WorldIdManager.Instance.Initialize();
-        WorldManager.Instance.Load();
+        // --- Stage 2: Orchestrated parallel Load() ---
+        // Managers implementing ILoadable are sorted by constructor dep graph and run in parallel batches.
+        await _orchestrator.RunLoadAsync();
 
-        // Feature Sets 
-        ExperienceManager.Instance.Load();
-        FeaturesManager.Initialize();
-        LocalizationManager.Instance.Load();
-
-        ObjectIdManager.Instance.Initialize();
-        TradeIdManager.Instance.Initialize();
-
-        ZoneManager.Instance.Load();
-        // TODO: Implement lazy loading for heightmaps
-        var heightmapTask = Task.Run(() =>
-        {
-            WorldManager.Instance.LoadHeightmaps();
-        }, cancellationToken);
-
-        ContainerIdManager.Instance.Initialize();
-        ItemIdManager.Instance.Initialize();
-        DoodadIdManager.Instance.Initialize();
-        ChatManager.Instance.Initialize();
-        CharacterIdManager.Instance.Initialize();
-        FamilyIdManager.Instance.Initialize();
-        ExpeditionIdManager.Instance.Initialize();
-        VisitedSubZoneIdManager.Instance.Initialize();
-        PrivateBookIdManager.Instance.Initialize();
-        FriendIdManager.Instance.Initialize();
-        MateIdManager.Instance.Initialize();
-        HousingIdManager.Instance.Initialize();
-        HousingTldManager.Instance.Initialize();
-        TeamIdManager.Instance.Initialize();
-        QuestIdManager.Instance.Initialize();
-        MailIdManager.Instance.Initialize();
-        UccIdManager.Instance.Initialize();
-        MusicIdManager.Instance.Initialize();
-        ShipyardIdManager.Instance.Initialize();
-        ShipyardManager.Instance.Initialize();
-        // SkillTlIdManager.Instance.Initialize();
-        AuctionIdManager.Instance.Initialize();
-        GimmickIdManager.Instance.Initialize();
-        IndunManager.Instance.Initialize();
-        TaxationsManager.Instance.Load();
-
-        GameDataManager.Instance.LoadGameData();
-        QuestManager.Instance.Load();
-
-        FormulaManager.Instance.Load();
-        AiPathsManager.Instance.Load();
-
-        TlIdManager.Instance.Initialize();
-        SpecialtyManager.Instance.Load();
-        ItemManager.Instance.Load();
+        // --- Stage 3: Post-load special steps ---
+        GameDataManager.Instance.PostLoadGameData();
         ItemManager.Instance.LoadUserItems();
-        AnimationManager.Instance.Load();
-        PlotManager.Instance.Load();
-        SkillManager.Instance.Load();
-        CraftManager.Instance.Load();
-        // MateManager.Instance.Load();
-        // SlaveManager.Instance.Load(); // Moved to WorldInstance
-        TeamManager.Instance.Load();
-        AuctionManager.Instance.Load();
-        MailManager.Instance.Load();
-        ExpressTextManager.Instance.Load();
-
-        NameManager.Instance.Load();
-        FactionManager.Instance.Load();
-        ExpeditionManager.Instance.Load();
-        CharacterManager.Instance.Load();
-        FamilyManager.Instance.Load();
-        PortalManager.Instance.Load();
-        FriendMananger.Instance.Load();
-        ModelManager.Instance.Load();
-
-        AIManager.Instance.Initialize();
-
-        GameScheduleManager.Instance.Load();
-        NpcManager.Instance.Load();
-
-        DoodadManager.Instance.Load();
-        ShipyardManager.Instance.Load();
-
-        SubZoneManager.Instance.Load();
-        PublicFarmManager.Instance.Load();
-
-        // SpawnManager.Instance.Load(); // Moved to world instance
-
-        AccessLevelManager.Instance.Load();
-        CashShopManager.Instance.Load();
         CashShopManager.Instance.EnabledShop();
-        UccManager.Instance.Load();
-        MusicManager.Instance.Load();
 
+        // --- Scripts ---
         if (AppConfiguration.Instance.Scripts.LoadStrategy == ScriptsConfig.LoadStrategyType.Compilation)
         {
             ScriptCompiler.Compile();
@@ -161,39 +88,22 @@ public sealed class GameService : IHostedService, IDisposable
         else
         {
             // (Preferred for debugging)
-            // Use reflection to load scripts 
+            // Use reflection to load scripts
             ScriptReflector.Reflect();
         }
 
         TimeManager.Instance.Start();
         TaskManager.Instance.Start();
-        
-        // LaborPowerManager.Initialize();
-        TimedRewardsManager.Instance.Initialize();
 
-        DuelManager.Initialize();
-        SaveManager.Instance.Initialize();
-        AreaTriggerManager.Instance.Initialize();
-        SpecialtyManager.Initialize();
-        CashShopManager.Instance.Initialize();
-        GameDataManager.Instance.PostLoadGameData();
-        FishSchoolManager.Instance.Initialize();
-        RadarManager.Instance.Initialize();
-        ManaRegenManager.Instance.Initialize();
-        PublicFarmManager.Instance.Initialize();
+        // --- Stage 4: Orchestrated parallel Initialize() ---
+        await _orchestrator.RunInitializeAsync();
 
-        if ((heightmapTask != null) && (!heightmapTask.IsCompleted))
-        {
-            Logger.Info("Waiting on heightmaps to be loaded before proceeding, please wait ...");
-            await heightmapTask;
-        }
-
-        // Start main_world and other static instance
+        // --- Stage 5: World creation + network ---
+        // Start main_world and other static instances
         WorldManager.Instance.CreateStaticInstances();
-
         WorldManager.Instance.Initialize();
 
-        CharacterManager.CheckForDeletedCharacters();
+        CharacterManager.Instance.CheckForDeletedCharacters();
         CharacterManager.Instance.StartOnlineTracking();
 
         GameNetwork.Instance.Start();

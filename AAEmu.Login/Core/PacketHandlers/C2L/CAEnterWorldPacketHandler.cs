@@ -1,14 +1,16 @@
-﻿using AAEmu.Login.Core.Controllers;
-using AAEmu.Login.Core.Network.Connections;
+﻿using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Packets.C2L;
 
 namespace AAEmu.Login.Core.PacketHandlers.C2L;
 
-public class CAEnterWorldPacketHandler(IGameController gameController)
+/// <summary>
+/// Handles the <see cref="CAEnterWorldPacket"/> which is sent by the client to request entering the game world.
+/// </summary>
+public class CAEnterWorldPacketHandler
     : ILoginPacketHandler<CAEnterWorldPacket>
 {
-    public void Execute(CAEnterWorldPacket packet, LoginConnection connection)
+    public async Task Execute(CAEnterWorldPacket packet, ILoginSession session, CancellationToken cancellationToken)
     {
-        gameController.RequestEnterWorld(connection, packet.GsId);
+        await session.InitiateEnterWorldAsync(packet.GsId, cancellationToken);
     }
 }

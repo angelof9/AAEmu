@@ -1,7 +1,8 @@
-﻿using System.Numerics;
+using System.Collections.Concurrent;
+using System.Numerics;
+
 using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Managers;
-using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Connections;
 using AAEmu.Game.Core.Network.Game;
@@ -31,7 +32,7 @@ namespace AAEmu.Game.Models.Game.Units;
 
 public class Unit : BaseUnit, IUnit
 {
-    public virtual UnitTypeFlag TypeFlag { get; } = UnitTypeFlag.None;
+    public virtual UnitTypeFlag TypeFlag { get => UnitTypeFlag.None; }
     public virtual BaseUnitType BaseUnitType { get; set; } = BaseUnitType.Invalid;
 
     public virtual UnitEvents Events { get; }
@@ -212,7 +213,7 @@ public class Unit : BaseUnit, IUnit
     public BaseUnit CurrentTarget { get; set; }
     public BaseUnit CurrentInteractionObject { get; set; }
     public virtual byte RaceGender => 0;
-    public UnitCustomModelParams ModelParams { get; set; } = new ();
+    public UnitCustomModelParams ModelParams { get; set; } = new();
     public byte ActiveWeapon { get; set; }
     public bool IdleStatus { get; set; }
     public bool ForceAttack { get; set; }
@@ -231,17 +232,16 @@ public class Unit : BaseUnit, IUnit
 
     public bool IsInBattle
     {
-        get => _isInBattle;
+        get;
         set
         {
-            if (value == _isInBattle)
+            if (value == field)
                 return;
-            _isInBattle = value;
-            if (!_isInBattle)
+            field = value;
+            if (!field)
                 BroadcastPacket(new SCCombatClearedPacket(ObjId), true);
         }
     }
-    private bool _isInBattle;
 
     public bool IsInDuel { get; set; }
     public bool IsInPatrol { get; set; } // so as not to run the route a second time
@@ -262,6 +262,8 @@ public class Unit : BaseUnit, IUnit
 
     public UnitProcs Procs { get; protected set; }
 
+    public ConcurrentDictionary<uint, Aggro> AggroTable { get; } = [];
+
     public Unit()
     {
         Events = new UnitEvents();
@@ -271,6 +273,7 @@ public class Unit : BaseUnit, IUnit
         Equipment = new EquipmentContainer(0, SlotType.Equipment, false, this);
         ChargeLock = new object();
         Cooldowns = new UnitCooldowns();
+        CharacterTagging = new Tagging(this); //Adding because Tagging works differently than Aggro
     }
 
     public void SetPosition(float x, float y, float z, sbyte rotationX, sbyte rotationY, sbyte rotationZ)
@@ -286,6 +289,11 @@ public class Unit : BaseUnit, IUnit
             Events.OnMovement(this, new OnMovementArgs());
         }
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
+
+        // Characters handle underwater/breath in Character.SetPosition.
+        // Avoid double-updating IsUnderWater (and packet spam) for players.
+        if (this is Character)
+            return;
 
         var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.InstanceId)?.Template.OceanLevel - 2f ?? 98f;
         if (!IsUnderWater && Transform.World.Position.Z < worldDrownThreshold)
@@ -359,7 +367,7 @@ public class Unit : BaseUnit, IUnit
                 // Took damage, check downwards
                 foreach (var triggerValue in HpTriggerPointsPercent)
                 {
-                    if ((oldHpP > triggerValue) && (newHpP <= triggerValue))
+                    if (oldHpP > triggerValue && newHpP <= triggerValue)
                     {
                         DoHpChangeTrigger(triggerValue, true, oldHpValue, newHpValue);
                         break;
@@ -372,7 +380,7 @@ public class Unit : BaseUnit, IUnit
                 // Healed, check upwards
                 foreach (var triggerValue in HpTriggerPointsPercent)
                 {
-                    if ((oldHpP < triggerValue) && (newHpP >= triggerValue))
+                    if (oldHpP < triggerValue && newHpP >= triggerValue)
                     {
                         DoHpChangeTrigger(triggerValue, false, oldHpValue, newHpValue);
                         break;
@@ -430,7 +438,12 @@ public class Unit : BaseUnit, IUnit
     {
         InterruptSkills();
 
+        IsInBattle = false;
+
         Events.OnDeath(this, new OnDeathArgs { Killer = (Unit)killer, Victim = this });
+        ParentWorld.Events.OnUnitKilled(ParentWorld, new OnUnitKilledArgs { Killer = (Unit)killer, Victim = this });
+        ((Unit)killer).Events.OnKill(this, new OnKillArgs { Killer = (Unit)killer, Victim = this });
+
         Buffs.RemoveEffectsOnDeath();
         killer.BroadcastPacket(new SCUnitDeathPacket(ObjId, killReason, (Unit)killer), true);
         if (killer == this)
@@ -491,7 +504,7 @@ public class Unit : BaseUnit, IUnit
         // if we died sitting on a horse
         if (character.Hp > 0) { return; }
 
-        var mateList = character.ParentWorld.MateManager.GetActiveMates(character.Id);
+        var mateList = character.ParentWorld.MateManager.GetActiveMates(character.Id).ToList();
         foreach (var mate in mateList)
         {
             character.Mates.DespawnMate(mate.TlId);
@@ -500,7 +513,7 @@ public class Unit : BaseUnit, IUnit
 
     public void StopAutoSkill(Unit unit)
     {
-        if (unit.AutoAttackTask is null || !(unit is Character character))
+        if (unit.AutoAttackTask is null || unit is not Character character)
         {
             return;
         }
@@ -590,7 +603,7 @@ public class Unit : BaseUnit, IUnit
         if (criminalState)
         {
             // Don't trigger Retribution (purple) when target is a Npc (except for player portals)
-            if ((attackedTarget is Npc) && (attackedTarget is not Portal))
+            if (attackedTarget is Npc && attackedTarget is not Portal)
                 return;
 
             var buff = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Retribution);
@@ -674,13 +687,13 @@ public class Unit : BaseUnit, IUnit
                 continue;
             value += bonus.Value;
         }
-        
+
         // Percent Values
         foreach (var bonus in bonuses)
         {
             if (bonus.Template.ModifierType != UnitModifierType.Percent)
                 continue;
-            value += (value * bonus.Value / 100f);
+            value += value * bonus.Value / 100f;
         }
 
         return value;
@@ -779,6 +792,10 @@ public class Unit : BaseUnit, IUnit
     public virtual ModelPostureType ModelPostureType { get => ModelPostureType.None; }
     public Gimmick Gimmick { get; set; }
 
+    /// <summary>
+    /// Tagging works differently to Aggro and has its own system 
+    /// </summary>
+    public Tagging CharacterTagging { get; set; }
     public virtual void OnSkillEnd(Skill skill)
     {
 
@@ -796,7 +813,7 @@ public class Unit : BaseUnit, IUnit
         var minHpLeft = MaxHp / 20; //5% of hp 
         var maxDmgLeft = Hp - minHpLeft; // Max damage one can take 
 
-        fallDmg = (int)(fallDmg + (fallDmg * multiplier));
+        fallDmg = (int)(fallDmg + fallDmg * multiplier);
 
         if (fallVel >= 32000)
         {
@@ -836,12 +853,10 @@ public class Unit : BaseUnit, IUnit
     {
         // Keep origin faction data temporarily for arena players
         OriginFaction = Faction;
+        var player = this as Character;
 
-        if (this is Character player)
-        {
-            // change the faction for the character
-            player.OriginFactionName = player.FactionName;
-        }
+        // change the faction for the character
+        player?.OriginFactionName = player.FactionName;
 
         Logger.Info($"SetFaction: npc={TemplateId}:{ObjId}, factionId={factionId}");
 
@@ -851,8 +866,10 @@ public class Unit : BaseUnit, IUnit
         }
         else
         {
-            BroadcastPacket(new SCUnitFactionChangedPacket(ObjId, Name, Faction?.Id ?? 0, factionId, false), true);
+            var oldFactionId = Faction?.Id ?? 0;
+            // BroadcastPacket(new SCUnitFactionChangedPacket(ObjId, Name, Faction?.Id ?? 0, factionId, false), true);
             Faction = FactionManager.Instance.GetFaction(factionId);
+            BroadcastPacket(new SCUnitFactionChangedPacket(ObjId, Name, oldFactionId, Faction.Id, false), true);
         }
 
         // TODO added for quest Id=2486
@@ -1026,7 +1043,7 @@ public class Unit : BaseUnit, IUnit
 
                 if (!setNumPieces.TryGetValue(equipItemSetId, out var value))
                 {
-                    setNumPieces.Add(equipItemSetId, (1));
+                    setNumPieces.Add(equipItemSetId, 1);
                     itemLevels.Add(equipItemSetId, (uint)item.Template.Level);
                 }
                 else
@@ -1081,7 +1098,7 @@ public class Unit : BaseUnit, IUnit
 
     private void ApplyArmorGradeBuff(Item itemAdded, Item itemRemoved)
     {
-        if ((itemAdded != null || itemRemoved != null) && (!(itemAdded is Armor) && !(itemRemoved is Armor)))
+        if ((itemAdded != null || itemRemoved != null) && itemAdded is not Items.Armor && itemRemoved is not Items.Armor)
             return;
 
         // Clear any existing armor grade buffs
@@ -1091,10 +1108,10 @@ public class Unit : BaseUnit, IUnit
         var armorPieces = new Dictionary<ArmorType, List<Armor>>();
         foreach (var item in Equipment.Items)
         {
-            if (!(item is Armor armor))
+            if (item is not Armor armor)
                 continue;
 
-            if (!(item.Template is ArmorTemplate armorTemplate))
+            if (item.Template is not ArmorTemplate armorTemplate)
                 continue;
 
             if (armorTemplate.SlotTemplate.SlotTypeId == (ulong)EquipmentItemSlotType.Back)
@@ -1171,7 +1188,7 @@ public class Unit : BaseUnit, IUnit
 
         // This const was calculated by hand, it might make no sense.
         var abLevel = totalLevel * 0.40670554f;
-        var gradeBuffAbLevel = (abLevel * abLevel) / 15 + 30;
+        var gradeBuffAbLevel = abLevel * abLevel / 15 + 30;
         var lowestGrade = piecesAboveArcane.Min(a => a.Grade);
 
         // Apply buff 
@@ -1208,8 +1225,8 @@ public class Unit : BaseUnit, IUnit
             }
 
             // Charged Item Buffs
-            if ((itemRemoved.Template is EquipItemTemplate equipItemTemplate) &&
-                (equipItemTemplate.RechargeBuffId > 0) &&
+            if (itemRemoved.Template is EquipItemTemplate equipItemTemplate &&
+                equipItemTemplate.RechargeBuffId > 0 &&
                 Buffs.CheckBuff(equipItemTemplate.RechargeBuffId))
                 Buffs.RemoveBuff(equipItemTemplate.RechargeBuffId);
         }
@@ -1230,8 +1247,8 @@ public class Unit : BaseUnit, IUnit
             }
 
             // Charged Item Buffs
-            if ((itemAdded is EquipItem equipItem) && (equipItem.Template is EquipItemTemplate equipItemTemplate) &&
-                (equipItemTemplate.RechargeBuffId > 0))
+            if (itemAdded is EquipItem equipItem && equipItem.Template is EquipItemTemplate equipItemTemplate &&
+                equipItemTemplate.RechargeBuffId > 0)
             {
                 var addChargeBuff = false;
                 var checkExpireTime = equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack)
@@ -1240,15 +1257,15 @@ public class Unit : BaseUnit, IUnit
                 checkExpireTime = checkExpireTime.AddMinutes(equipItemTemplate.ChargeLifetime);
 
                 // Check against timer
-                if ((equipItemTemplate.ChargeLifetime > 0) && (checkExpireTime > DateTime.UtcNow))
+                if (equipItemTemplate.ChargeLifetime > 0 && checkExpireTime > DateTime.UtcNow)
                     addChargeBuff = true;
 
                 // Check against charge counter
-                if ((equipItemTemplate.ChargeCount > 0) && (equipItem.ChargeCount > 0))
+                if (equipItemTemplate.ChargeCount > 0 && equipItem.ChargeCount > 0)
                     addChargeBuff = true;
 
                 // If this item is Bind on unwrap, don't start the buff if it's not unwrapped
-                if (equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack) && (equipItem.HasFlag(ItemFlag.Unpacked) == false))
+                if (equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack) && equipItem.HasFlag(ItemFlag.Unpacked) == false)
                     addChargeBuff = false;
 
                 if (addChargeBuff)
@@ -1287,8 +1304,8 @@ public class Unit : BaseUnit, IUnit
                 }
 
                 // Charged Item Buffs
-                if ((item is EquipItem equipItem) && (equipItem.Template is EquipItemTemplate equipItemTemplate) &&
-                    (equipItemTemplate.RechargeBuffId > 0))
+                if (item is EquipItem equipItem && equipItem.Template is EquipItemTemplate equipItemTemplate &&
+                    equipItemTemplate.RechargeBuffId > 0)
                 {
                     var addChargeBuff = false;
                     var checkExpireTime = equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack)
@@ -1297,15 +1314,15 @@ public class Unit : BaseUnit, IUnit
                     checkExpireTime = checkExpireTime.AddMinutes(equipItemTemplate.ChargeLifetime);
 
                     // Check against timer
-                    if ((equipItemTemplate.ChargeLifetime > 0) && (checkExpireTime > DateTime.UtcNow))
+                    if (equipItemTemplate.ChargeLifetime > 0 && checkExpireTime > DateTime.UtcNow)
                         addChargeBuff = true;
 
                     // Check against charge counter
-                    if ((equipItemTemplate.ChargeCount > 0) && (equipItem.ChargeCount > 0))
+                    if (equipItemTemplate.ChargeCount > 0 && equipItem.ChargeCount > 0)
                         addChargeBuff = true;
 
                     // If this item is Bind on unwrap, don't start the buff if it's not unwrapped
-                    if (equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack) && (equipItem.HasFlag(ItemFlag.Unpacked) == false))
+                    if (equipItemTemplate.BindType.HasFlag(ItemBindType.BindOnUnpack) && equipItem.HasFlag(ItemFlag.Unpacked) == false)
                         addChargeBuff = false;
 
                     if (addChargeBuff)
@@ -1338,7 +1355,7 @@ public class Unit : BaseUnit, IUnit
         {
             // Remove the old zone buff if needed
             var lastZoneGroup = ZoneManager.Instance.GetZoneGroupById(lastZone.GroupId);
-            if ((lastZoneGroup != null) && (lastZoneGroup.BuffId != 0))
+            if (lastZoneGroup != null && lastZoneGroup.BuffId != 0)
             {
                 // Remove the applied buff from last zoneGroup
                 Buffs.RemoveBuff(lastZoneGroup.BuffId);
@@ -1348,7 +1365,7 @@ public class Unit : BaseUnit, IUnit
         {
             // Apply the new zone buff if needed
             var newZoneGroup = ZoneManager.Instance.GetZoneGroupById(newZone.GroupId);
-            if ((newZoneGroup != null) && (newZoneGroup.BuffId != 0))
+            if (newZoneGroup != null && newZoneGroup.BuffId != 0)
             {
                 // Add buff from new zoneGroup
                 var buffTemplate = SkillManager.Instance.GetBuffTemplate(newZoneGroup.BuffId);
@@ -1362,7 +1379,7 @@ public class Unit : BaseUnit, IUnit
         }
     }
 
-    private Dictionary<uint, int> _triggerCounts = new Dictionary<uint, int>();
+    private readonly Dictionary<uint, int> _triggerCounts = new();
 
     public void IncrementTriggerCount(uint buffId)
     {
@@ -1398,15 +1415,15 @@ public class Unit : BaseUnit, IUnit
         }
     }
 
-     /// <summary>
-     /// Call regeneration function of the unit
-     /// </summary>
-     /// <param name="delta"></param>
-     protected virtual void RegenTick(TimeSpan delta)
-     {
-         // Do nothing
-     }
-   
+    /// <summary>
+    /// Call regeneration function of the unit
+    /// </summary>
+    /// <param name="delta"></param>
+    protected virtual void RegenTick(TimeSpan delta)
+    {
+        // Do nothing
+    }
+
     /// <summary>
     /// Tick called for Units in active player regions about once per second
     /// </summary>
@@ -1415,5 +1432,160 @@ public class Unit : BaseUnit, IUnit
     {
         CombatTick(delta);
         RegenTick(delta);
+    }
+
+    /// <summary>
+    /// Adds aggro
+    /// </summary>
+    /// <param name="kind"></param>
+    /// <param name="unit"></param>
+    /// <param name="amount"></param>
+    /// <returns>Returns true if it's initial aggro</returns>
+    public bool AddUnitAggro(AggroKind kind, Unit unit, int amount)
+    {
+        //var player = unit as Character; // TODO player.Region становится равным null | player.Region becomes null
+        var player = unit as Character;
+        var npc = this as Npc;
+        var isNewAggro = false;
+        // Character player = null;
+        // if (unit is not Npc and not Units.Mate and not Slave)
+        // {
+        //     player = (Character)unit;
+        // }
+        // player?.SendMessage(ChatType.System, $"AddUnitAggro {player.Name} + {amount} for {this.ObjId}");
+
+        // check self buff tags
+        if (Buffs.CheckBuffTag((uint)TagsEnum.NoFight) || Buffs.CheckBuffTag((uint)TagsEnum.Returning))
+        {
+            ClearAggroOfUnit(unit);
+            return false;
+        }
+
+        // check target buff tags
+        if ((unit.Buffs?.CheckBuffTag((uint)TagsEnum.NoFight) ?? false) || (unit.Buffs?.CheckBuffTag((uint)TagsEnum.Returning) ?? false))
+        {
+            ClearAggroOfUnit(unit);
+            return false;
+        }
+
+
+        //Add Tagging if it was damage aggro
+        if (kind == AggroKind.Damage)
+            CharacterTagging.AddTagger(unit, amount);
+
+        amount = (int)(amount * (unit.AggroMul / 100.0f));
+        amount = (int)(amount * (IncomingAggroMul / 100.0f));
+
+        if (AggroTable.TryGetValue(unit.ObjId, out var aggro))
+        {
+            aggro.AddAggro(kind, amount);
+            isNewAggro = true;
+        }
+        else
+        {
+            aggro = new Aggro(unit);
+            aggro.AddAggro(kind, amount);
+            if (AggroTable.TryAdd(unit.ObjId, aggro))
+            {
+                unit.Events.OnHealed += OnAbuserHealed;
+                unit.Events.OnDeath += OnAbuserDied;
+            }
+
+            // TODO: make this party/raid wide? Take into account pets/slaves?
+            // If there is a quest starter attached to this NPC, start it when unit gets added for the first time
+            // to the aggro list
+            if (npc != null)
+            {
+                if (npc.Template.EngageCombatGiveQuestId > 0 && player is not null)
+                {
+                    if (!player.Quests.IsQuestComplete(npc.Template.EngageCombatGiveQuestId) &&
+                        !player.Quests.HasQuest(npc.Template.EngageCombatGiveQuestId))
+                        player.Quests.AddQuest(npc.Template.EngageCombatGiveQuestId);
+                }
+            }
+
+            // Send initial hit packet as well
+            unit.SendPacketToPlayers([this, unit], new SCCombatFirstHitPacket(this.ObjId, unit.ObjId, 0));
+        }
+
+        if (player == null)
+            return isNewAggro;
+
+        if (aggro.TotalAggro > 0 && !IsDead && Hp > 0 && !player.IsInAggroListOf.ContainsKey(this.ObjId))
+        {
+            player.IsInAggroListOf.Add(this.ObjId, this);
+        }
+        //player?.Quests.OnAggro(this);
+        // инициируем событие
+        //Task.Run(() => QuestManager.Instance.DoOnAggroEvents(player, this));
+        if (npc != null)
+        {
+            QuestManager.Instance.DoOnAggroEvents(player, npc);
+        }
+        return isNewAggro;
+    }
+
+    public void ClearAggroOfUnit(Unit unit)
+    {
+        if (unit is null)
+            return;
+
+        if (unit is Character targetPlayer)
+        {
+            targetPlayer.IsInAggroListOf.Remove(ObjId);
+            // Also remove from assault lists if both are players
+            if (this is Character thisPlayer)
+            {
+                thisPlayer.AssaultOn.Remove(targetPlayer.Id);
+                targetPlayer.AssaultedBy.Remove(thisPlayer.Id);
+            }
+        }
+
+        // var player = unit as Character;
+        // player?.SendMessage($"ClearAggroOfUnit {player.Name} for {this.ObjId}");
+
+        var lastAggroCount = AggroTable.Count;
+        if (lastAggroCount <= 0)
+        {
+            return;
+        }
+        if (AggroTable.TryRemove(unit.ObjId, out _))
+        {
+            unit.Events.OnHealed -= OnAbuserHealed;
+            unit.Events.OnDeath -= OnAbuserDied;
+        }
+        else
+        {
+            Logger.Warn($"Failed to remove unit[{unit.ObjId}] aggro from NPC[{ObjId}]");
+        }
+
+        if (AggroTable.Count != lastAggroCount)
+            (this as Npc)?.CheckIfEmptyAggroToReturn(unit);
+    }
+
+    public void OnAbuserHealed(object sender, OnHealedArgs args)
+    {
+        AddUnitAggro(AggroKind.Heal, args.Healer, args.HealAmount);
+    }
+
+    public void OnAbuserDied(object sender, OnDeathArgs args)
+    {
+        ClearAggroOfUnit(args.Victim);
+    }
+
+    public virtual void ClearAllAggro()
+    {
+        // Adding for tagging
+        CharacterTagging.ClearAllTaggers();
+
+        foreach (var table in AggroTable)
+        {
+            var unit = table.Value.Owner?.ParentWorld.GetUnit(table.Key);
+            if (unit != null)
+            {
+                unit.Events.OnHealed -= OnAbuserHealed;
+                unit.Events.OnDeath -= OnAbuserDied;
+            }
+        }
     }
 }

@@ -27,7 +27,7 @@ using NLog;
 
 namespace AAEmu.Game.Core.Managers;
 
-public class ItemManager : Singleton<ItemManager>
+public class ItemManager(ISkillManager skillManager, IItemIdManager itemIdManager, IContainerIdManager containerIdManager, ILocalizationManager localizationManager, ITaskManager taskManager, IWorldManager worldManager) : Singleton<ItemManager>, IItemManager
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private bool _loaded;
@@ -78,6 +78,9 @@ public class ItemManager : Singleton<ItemManager>
     private Dictionary<ulong, ItemContainer> _allPersistentContainers;
     private bool _loadedUserItems;
     // private Dictionary<ulong, Item> _timerSubscriptionsItems;
+
+    public static int MaxGradeId;
+    public static int MaxGradeValue;
 
     public ItemTemplate GetTemplate(uint id)
     {
@@ -436,7 +439,7 @@ public class ItemManager : Singleton<ItemManager>
         ItemTimerLock = new();
         LastTimerCheck = DateTime.UtcNow;
 
-        SkillManager.Instance.OnSkillsLoaded += OnSkillsLoaded;
+        skillManager.OnSkillsLoaded += OnSkillsLoaded;
         using (var connection = SQLite.CreateConnection())
         {
             Logger.Info("Loading item templates ...");
@@ -552,6 +555,8 @@ public class ItemManager : Singleton<ItemManager>
                         _grades.Add(template.Grade, template);
                         _gradesOrdered.Add(template.GradeOrder, template);
                     }
+                    MaxGradeId = _grades.Keys.Max();
+                    MaxGradeValue = _gradesOrdered.Keys.Max();
                 }
             }
 
@@ -708,7 +713,7 @@ public class ItemManager : Singleton<ItemManager>
                 {
                     while (reader.Read())
                     {
-                        var template = new ItemProcTemplate()
+                        var template = new ItemProcTemplate
                         {
                             Id = reader.GetUInt32("id"),
                             SkillId = reader.GetUInt32("skill_id"),
@@ -737,7 +742,7 @@ public class ItemManager : Singleton<ItemManager>
                         if (!_equipItemSets.ContainsKey(id))
                             _equipItemSets.Add(id, new EquipItemSet { Id = id });
 
-                        var bonus = new EquipItemSetBonus()
+                        var bonus = new EquipItemSetBonus
                         {
                             NumPieces = reader.GetInt32("num_pieces"),
                             BuffId = reader.GetUInt32("buff_id", 0),
@@ -887,7 +892,7 @@ public class ItemManager : Singleton<ItemManager>
 
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT * FROM item_body_parts";
+                command.CommandText = "SELECT * FROM item_body_parts ORDER BY id";
                 command.Prepare();
                 using (var sqliteReader = command.ExecuteReader())
                 using (var reader = new SQLiteWrapperReader(sqliteReader))
@@ -1328,7 +1333,7 @@ public class ItemManager : Singleton<ItemManager>
                 {
                     while (reader.Read())
                     {
-                        var armorGradeBuff = new ArmorGradeBuff()
+                        var armorGradeBuff = new ArmorGradeBuff
                         {
                             Id = reader.GetByte("id"),
                             ArmorType = (ArmorType)reader.GetUInt32("armor_type_id"),
@@ -1352,7 +1357,7 @@ public class ItemManager : Singleton<ItemManager>
                 {
                     while (reader.Read())
                     {
-                        var entry = new ItemSet()
+                        var entry = new ItemSet
                         {
                             Id = reader.GetUInt32("id"),
                             KindId = reader.GetUInt32("kind_id"),
@@ -1373,7 +1378,7 @@ public class ItemManager : Singleton<ItemManager>
                 {
                     while (reader.Read())
                     {
-                        var entry = new ItemSetItem()
+                        var entry = new ItemSetItem
                         {
                             Id = reader.GetUInt32("id"),
                             ItemSetId = reader.GetUInt32("item_set_id"),
@@ -1403,7 +1408,7 @@ public class ItemManager : Singleton<ItemManager>
                     invalidItemCount++;
                     i.Value.Name = "invalid_item_" + i.Value.Id;
                 }
-                i.Value.searchString = (i.Value.Name + " " + LocalizationManager.Instance.Get("items", "name", i.Value.Id)).ToLower();
+                i.Value.searchString = (i.Value.Name + " " + localizationManager.Get("items", "name", i.Value.Id)).ToLower();
             }
 
             Logger.Info($"Loaded {_templates.Count} item templates (with {invalidItemCount} unused) ...");
@@ -1602,7 +1607,7 @@ public class ItemManager : Singleton<ItemManager>
         return (updateCount, deleteCount, containerUpdateCount);
     }
 
-    internal SlotType GetContainerSlotTypeByContainerId(ulong dbId)
+    public SlotType GetContainerSlotTypeByContainerId(ulong dbId)
     {
         _allPersistentContainers.TryGetValue(dbId, out var container);
 
@@ -1684,7 +1689,7 @@ public class ItemManager : Singleton<ItemManager>
         lock (_allPersistentContainers)
         {
             res = _allPersistentContainers.Remove(idToRemove);
-            ContainerIdManager.Instance.ReleaseId(idToRemove);
+            containerIdManager.ReleaseId(idToRemove);
         }
 
         // Remove deleted container from DB
@@ -1827,7 +1832,7 @@ public class ItemManager : Singleton<ItemManager>
                         Logger.Error($"Failed to load item with ID {item.Id}, possible duplicate entries!");
                     }
 
-                    if ((containerId > 0) && _allPersistentContainers.TryGetValue(containerId, out var container))
+                    if (containerId > 0 && _allPersistentContainers.TryGetValue(containerId, out var container))
                     {
                         // Move item to its container (if defined)
                         if (container.AddOrMoveExistingItem(ItemTaskType.Invalid, item, item.Slot))
@@ -1869,18 +1874,18 @@ public class ItemManager : Singleton<ItemManager>
 
         Logger.Info("Starting Timed Items Task ...");
         var itemTimerTask = new ItemTimerTask();
-        TaskManager.Instance.Schedule(itemTimerTask, null, TimeSpan.FromSeconds(1));
+        taskManager.Schedule(itemTimerTask, null, TimeSpan.FromSeconds(1));
 
         _loadedUserItems = true;
     }
 
     /// <summary>
-    /// Gets a new itemID for use on new items, will also remove it from the deleted itemIDs list. Use this instead of directly calling ItemIdManager.Instance.GetNextId();
+    /// Gets a new itemID for use on new items, will also remove it from the deleted itemIDs list. Use this instead of directly calling itemIdManager.GetNextId();
     /// </summary>
     /// <returns>A new itemID</returns>
     private ulong GetNewId()
     {
-        var itemId = ItemIdManager.Instance.GetNextId();
+        var itemId = itemIdManager.GetNextId();
         lock (_removedItems)
         {
             if (itemId != 0 && _removedItems.Contains(itemId))
@@ -1890,7 +1895,7 @@ public class ItemManager : Singleton<ItemManager>
     }
 
     /// <summary>
-    /// Releases a itemId for re-use, will also add it to the removed items list, use instead of ItemIdManager.Instance.ReleaseId();
+    /// Releases a itemId for re-use, will also add it to the removed items list, use instead of itemIdManager.ReleaseId();
     /// </summary>
     /// <param name="itemId">itemId of the item to be freed up</param>
     public void ReleaseId(ulong itemId)
@@ -1905,7 +1910,7 @@ public class ItemManager : Singleton<ItemManager>
             _allItems.Remove(itemId);
         }
         // This should be the only place where ItemId ReleaseId should be called directly
-        ItemIdManager.Instance.ReleaseId((uint)itemId);
+        itemIdManager.ReleaseId((uint)itemId);
     }
 
     [Obsolete("You can now use directly linked item containers, and no longer need to load them into the character object")]
@@ -1919,7 +1924,7 @@ public class ItemManager : Singleton<ItemManager>
     {
         foreach (var procTemplate in _itemProcTemplates.Values)
         {
-            procTemplate.SkillTemplate = SkillManager.Instance.GetSkillTemplate(procTemplate.SkillId);
+            procTemplate.SkillTemplate = skillManager.GetSkillTemplate(procTemplate.SkillId);
         }
     }
 
@@ -1927,7 +1932,7 @@ public class ItemManager : Singleton<ItemManager>
     {
         var template = GetTemplate(itemTemplateId);
         // Is a valid item, is a backpack item, doesn't bind on equip (it can bind on pickup)
-        return template is BackpackTemplate && (!template.BindType.HasFlag(ItemBindType.BindOnEquip));
+        return template is BackpackTemplate && !template.BindType.HasFlag(ItemBindType.BindOnEquip);
     }
 
     private static int UpdateItemContainerTimers(TimeSpan delta, ItemContainer itemContainer, Character character)
@@ -1939,7 +1944,7 @@ public class ItemManager : Singleton<ItemManager>
             return res;
         }
 
-        var isEquipmentContainer = (itemContainer is EquipmentContainer);
+        var isEquipmentContainer = itemContainer is EquipmentContainer;
 
         for (var i = itemContainer.Items.Count - 1; i >= 0; i--)
         {
@@ -1947,37 +1952,37 @@ public class ItemManager : Singleton<ItemManager>
             var doExpire = false;
 
             // Check if buffs need to expire
-            if (isEquipmentContainer && (item is EquipItem { Template: EquipItemTemplate { RechargeBuffId: > 0 } equipItemTemplate } equipItem))
+            if (isEquipmentContainer && item is EquipItem { Template: EquipItemTemplate { RechargeBuffId: > 0 } equipItemTemplate } equipItem)
             {
                 var expireBuff = false;
 
                 // Expire Time
-                var expireCheckTime = (equipItemTemplate.BindType == ItemBindType.BindOnUnpack)
+                var expireCheckTime = equipItemTemplate.BindType == ItemBindType.BindOnUnpack
                     ? equipItem.UnpackTime
                     : equipItem.ChargeStartTime;
                 expireCheckTime = expireCheckTime.AddMinutes(equipItemTemplate.ChargeLifetime);
 
                 // Do we need to check if charges expired ?
-                var checkCharges = (equipItemTemplate.ChargeCount > 0);
-                if ((equipItemTemplate.BindType == ItemBindType.BindOnUnpack) && (equipItem.HasFlag(ItemFlag.Unpacked) == false))
+                var checkCharges = equipItemTemplate.ChargeCount > 0;
+                if (equipItemTemplate.BindType == ItemBindType.BindOnUnpack && equipItem.HasFlag(ItemFlag.Unpacked) == false)
                     checkCharges = false;
 
                 // Timed Charged items
-                if ((equipItemTemplate.ChargeLifetime > 0) && (expireCheckTime <= DateTime.UtcNow))
+                if (equipItemTemplate.ChargeLifetime > 0 && expireCheckTime <= DateTime.UtcNow)
                     expireBuff = true;
 
                 // Count Charged Items
-                if (checkCharges && (equipItemTemplate.ChargeCount > 0) && (equipItem.ChargeCount <= 0))
+                if (checkCharges && equipItemTemplate.ChargeCount > 0 && equipItem.ChargeCount <= 0)
                     expireBuff = true;
 
                 // Apply the "expire" buff if needed
-                if (expireBuff && (character != null) &&
+                if (expireBuff && character != null &&
                     character.Buffs.CheckBuff(equipItemTemplate.RechargeBuffId))
                     character.Buffs.RemoveBuff(equipItemTemplate.RechargeBuffId);
             }
 
             // Check if item itself needs to be expired
-            if ((item.ExpirationTime > DateTime.MinValue) && (item.ExpirationTime <= DateTime.UtcNow))
+            if (item.ExpirationTime > DateTime.MinValue && item.ExpirationTime <= DateTime.UtcNow)
                 doExpire = true; // Item expired by predefined end time
             else if (item.ExpirationOnlineMinutesLeft > 0.0)
             {
@@ -2016,7 +2021,7 @@ public class ItemManager : Singleton<ItemManager>
         // even before you get the welcome message when logging in. (you can see it in the logs)
         // It only does this for items in your inventory, equipment and warehouse,
         // it is for example possible to have one in your mailbox, and it will immediately expire when you take it out.
-        var onlinePlayers = WorldManager.Instance.GetAllCharacters();
+        var onlinePlayers = worldManager.GetAllCharacters();
         var res = 0;
         foreach (var character in onlinePlayers)
         {
@@ -2067,7 +2072,7 @@ public class ItemManager : Singleton<ItemManager>
         var item = GetItemByItemId(itemId);
         if (item == null)
             return false;
-        if ((item.SlotType != slotType) || (item.Slot != slot))
+        if (item.SlotType != slotType || item.Slot != slot)
         {
             Logger.Warn($"UnwrapItem: Requested item position does not match up for {itemId} of user {character.Name}");
             return false;
@@ -2078,7 +2083,7 @@ public class ItemManager : Singleton<ItemManager>
             item.SetFlag(ItemFlag.SoulBound);
         var updateItemTask = new ItemUpdateSecurity(item, (byte)item.ItemFlags, item.HasFlag(ItemFlag.Secure), item.HasFlag(ItemFlag.Secure), item.ItemFlags.HasFlag(ItemFlag.Unpacked));
         character.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.ItemTaskThistimeUnpack, updateItemTask, []));
-        if ((item.Template is EquipItemTemplate { ChargeLifetime: > 0 }))
+        if (item.Template is EquipItemTemplate { ChargeLifetime: > 0 })
             character.SendPacket(new SCSyncItemLifespanPacket(true, item.Id, item.TemplateId, item.UnpackTime));
         return true;
     }
